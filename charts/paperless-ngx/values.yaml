@@ -960,9 +960,9 @@ priorityClassName: ""
 ##
 podSecurityContext:
   { }
-# fsGroup: 1001
+# fsGroup: 1000
 # supplementalGroups:
-#   - 1001
+#   - 1000
 
 ## @param securityContext General security context settings for
 ## ref: https://kubernetes.io/docs/tasks/configure-pod-container/security-context/
@@ -973,8 +973,8 @@ securityContext:
 # privileged: false
 # readOnlyRootFilesystem: true
 # runAsNonRoot: true
-# runAsGroup: 1001
-# runAsUser: 1001
+# runAsGroup: 1000
+# runAsUser: 1000
 # capabilities:
 #   drop:
 #     - ALL
