@@ -17,6 +17,8 @@ data:
   {{- /*
     General configuration
   */}}
+  TMPDIR: /tmp/paperless/gs # for ghostscript
+  PAPERLESS_SCRATCH_DIR: /tmp/paperless/scratch
   PAPERLESS_PORT: {{ .Values.paperless.port | quote }}
   USERMAP_UID: {{ .Values.paperless.uid | quote }}
   USERMAP_GID: {{ .Values.paperless.gid | quote }}
