@@ -1,7 +1,7 @@
 kind: StatefulSet
 
 activepieces:
-  domain: activepieces.helm.private
+  domain: activepieces.charts.internal
   configPath: ""
   database: postgres
 
@@ -58,10 +58,16 @@ activepieces:
 
   sandbox:
     executionMode: UNSANDBOXED
-    runTimeSeconds: false
+    flowTimeoutSeconds: false
     propagatedEnvVars: ""
 
-  dataRetentionDays: ""
+  dataRetentionDays: "31"
+  pausedFlowTimeoutDays: 30
+  maxFileSizeMB: 50
+  aiCreditUsdValue: 0.001
+  maxBarrierSignals: 500
+  flowRunLogInputTruncateThresholdKB: 4
+  flowRunLogSliceThresholdKB: 64
   workerConcurrency: 10
   triggerPollInterval: 5
   enableCloudAuth: false
@@ -76,7 +82,7 @@ ingress:
   tls:
     - secretName: activepieces-ingress-tls
       hosts:
-        - activepieces.helm.private
+        - activepieces.charts.internal
 
 postgresql:
   enabled: true

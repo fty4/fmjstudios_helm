@@ -17,7 +17,7 @@ data:
   NEXTAUTH_URL: {{ (include "linkwarden.ingress.url" .) | quote }}
   PAGINATION_TAKE_COUNT: {{ .Values.linkwarden.paginationTakeCount | quote }}
   {{- if eq .Values.linkwarden.data.storageType "filesystem" }}
-  STORAGE_FOLDER: {{ include "linkwarden.paths.data" . | quote }}
+  STORAGE_FOLDER: {{ .Values.linkwarden.data.filesystem.dataPath | quote }}
   {{- end }}
   {{- if eq .Values.linkwarden.data.storageType "s3" }}
   SPACES_ENDPOINT: {{ .Values.linkwarden.data.s3.endpoint }}
@@ -29,6 +29,9 @@ data:
   {{- end }}
   AUTOSCROLL_TIMEOUT: {{ .Values.linkwarden.autoscrollTimeout | quote }}
   RE_ARCHIVE_LIMIT: {{ .Values.linkwarden.rearchiveLimit | quote }}
+    {{- if .Values.linkwarden.auth.disableRegistration }}
+  NEXT_PUBLIC_DISABLE_REGISTRATION: {{ .Values.linkwarden.auth.disableRegistration | quote }}
+  {{- end }}
   {{- if .Values.linkwarden.maxFileSize }}
   NEXT_PUBLIC_MAX_FILE_SIZE: {{ .Values.linkwarden.maxFileSize | quote }}
   {{- end }}
@@ -49,10 +52,12 @@ data:
   {{- end }}
 ---
 {{- range $_, $v := .Values.linkwarden.auth.sso }}
+{{- if not $v.existingSecret }}
 {{- $providerArg := (dict "provider" $v.provider) }}
 {{- $provider := $v.provider }}
 {{- $issuer := $v.issuer }}
 {{- $issuerList := include "linkwarden.auth.providers.withIssuers" $ | fromJsonArray }}
+{{- $wellKnownList := include "linkwarden.auth.providers.withWellKnown" $ | fromJsonArray }}
 apiVersion: v1
 kind: ConfigMap
 metadata:
@@ -73,9 +78,14 @@ data:
   {{- if $v.customName }}
   {{ include "linkwarden.auth.envs.customName" $providerArg }}: {{ $v.customName }}
   {{- end }}
-  {{- if has $issuer $issuerList }}
+  {{- if has $provider $issuerList }}
   {{- if $v.issuer }}
   {{ include "linkwarden.auth.envs.issuer" $providerArg }}: {{ $issuer }}
+  {{- end }}
+  {{- end }}
+  {{- if has $provider $wellKnownList }}
+  {{- if $v.wellKnownUrl }}
+  {{ include "linkwarden.auth.envs.wellKnownUrl" $providerArg }}: {{ $v.wellKnownUrl }}
   {{- end }}
   {{- end }}
   {{- if (eq $provider "atlassian") }}
@@ -88,5 +98,19 @@ data:
   {{ printf "%s_APIVERSION" $provider | upper }}: {{ $v.apiVersion }}
   {{- end }}
   {{- end }}
+  {{- if (eq $provider "oidc") }}
+  {{- if $v.scopes }}
+  OIDC_SCOPES: {{ $v.scopes }}
+  {{- end }}
+  {{- end }}
+  {{- if (eq $provider "azure_ad_b2c") }}
+  {{- if $v.tenantName }}
+  AZURE_AD_B2C_TENANT_NAME: {{ $v.tenantName }}
+  {{- end }}
+  {{- if $v.primaryUserFlow }}
+  AZURE_AD_B2C_PRIMARY_USER_FLOW: {{ $v.primaryUserFlow }}
+  {{- end }}
+  {{- end }}
 ---
+{{- end }}
 {{- end }}

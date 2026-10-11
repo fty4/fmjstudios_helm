@@ -1,7 +1,20 @@
 paperless:
-  domain: paperless.helm.private
+  domain: paperless.charts.internal
   secretKey:
     value: "PretendThisIsASecretKey"
+
+  classifierMatchThreshold: 0.5
+  matchRegexTimeoutSeconds: 0.25
+
+  consume:
+    barcodes:
+      storeValues: true
+
+  ai:
+    extraParams:
+      temperature: 0.2
+    embeddingApiKey:
+      value: "ci-placeholder-embedding-key"
 
   auth:
     autoLoginUsername: ""
@@ -9,11 +22,9 @@ paperless:
     adminPassword: "admin-pass"
 
   redis:
-    host: paperless-redis-master
     password: "paperless"
 
   postgresql:
-    host: "paperless-postgresql"
     port: 5432
     name: "paperless"
     user: "paperless"
@@ -34,9 +45,9 @@ ingress:
   tls:
     - secretName: domain-tld-tls
       hosts:
-        - paperless.helm.private
+        - paperless.charts.internal
   extraHosts:
-    - host: paperless.helm.private
+    - host: paperless.charts.internal
       paths:
         - path: /
           pathType: ImplementationSpecific

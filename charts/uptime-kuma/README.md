@@ -1,4 +1,4 @@
-# FMJ Studios - Uptime-Kuma Helm Chart <img src="https://raw.githubusercontent.com/louislam/uptime-kuma/953058c6a5047c82a58606e442c6e572e215e3ff/public/icon-512x512.png" alt="Uptime-Kuma Logo" width="175" height="175" align="right" loading="lazy"/>
+# Ad Noctem Collective - Uptime-Kuma Helm Chart <img src="https://raw.githubusercontent.com/louislam/uptime-kuma/953058c6a5047c82a58606e442c6e572e215e3ff/public/icon-512x512.png" alt="Uptime-Kuma Logo" width="175" height="175" align="right" loading="lazy"/>
 
 Uptime-Kuma is an open-source, is an easy-to-use self-hosted monitoring tool. It supports monitoring uptime for HTTP(
 s) / TCP / HTTP(s) Keyword / HTTP(s) Json Query / Ping / DNS Record / Push / Steam Game Server / Docker Containers,
@@ -19,14 +19,14 @@ on [Docker Hub](https://hub.docker.com/r/louislam/uptime-kuma).
 ### Helm Repository Installation
 
 ```shell
-helm repo add fmjstudios https://fmjstudios.github.io/helm
-helm install uptime-kuma fmjstudios/uptime-kuma --version X.Y.Z
+helm repo add adnoctem https://adnoctem.github.io/charts
+helm install uptime-kuma adnoctem/uptime-kuma --version X.Y.Z
 ```
 
 ### OCI Installation
 
 ```shell
-helm install oci://ghcr.io/fmjstudios/helm/uptime-kuma:X.Y.Z
+helm install oci://ghcr.io/adnoctem/charts/uptime-kuma:X.Y.Z
 ```
 
 ## Introduction
@@ -42,22 +42,64 @@ a [PodDisruptionBudget](https://kubernetes.io/docs/tasks/run-application/configu
 enabled. [RBAC manifests](https://kubernetes.io/docs/reference/access-authn-authz/rbac/) are enabled by default.
 
 The chart supports the configuration of
-all [Uptime-Kuma environment variables]([StatefulSet](https://kubernetes.io/docs/concepts/workloads/controllers/statefulset/)
-or) via the `uptimeKuma` key in Helm's _values_ and makes use of the official Docker Hub container image, although this
-is configureble via the Image Parameters.
+all [Uptime-Kuma environment variables](https://github.com/louislam/uptime-kuma/wiki/Environment-Variables) via the
+`uptimeKuma` key in Helm's _values_ and makes use of the official Docker Hub container image, although this is
+configurable via the Image Parameters.
+
+## Upgrading
+
+### To 0.4.3 (Uptime-Kuma 2.5.5 -> 2.5.6)
+
+[Uptime-Kuma 2.5.6](https://github.com/louislam/uptime-kuma/releases/tag/2.5.6) fixes the average-response badge
+endpoint and includes dependency security updates. No Helm value changes or database migrations are required
+when upgrading from 2.5.5.
+
+### To 0.4.2 (Uptime-Kuma 2.5.4 -> 2.5.5)
+
+[Uptime-Kuma 2.5.5](https://github.com/louislam/uptime-kuma/releases/tag/2.5.5) fixes a memory leak in TCP monitors
+by closing TLS sockets after certificate checks. No Helm value changes or database migrations are required
+when upgrading from 2.5.4.
+
+### To 0.4.0 (Uptime-Kuma 1.23.13 -> 2.5.3)
+
+This is a major upstream version bump. Read the
+[official v1 to v2 migration guide](https://github.com/louislam/uptime-kuma/wiki/Migration-From-v1-To-v2) before
+upgrading - on first start with the new image, Uptime-Kuma migrates its SQLite database in place, which can take
+anywhere from minutes to hours depending on how much monitor history you have, and **must not be interrupted**.
+Back up your PVC first.
+
+- Fixed three pre-existing, version-independent template bugs found while testing this bump:
+  - The `readinessProbe` and `startupProbe` blocks both incorrectly rendered a second/third `livenessProbe` instead
+    of their own probe type, so enabling more than one of the three probes only ever actually configured one of
+    them on the container.
+  - All three probes checked an `/alive` path that has never existed in Uptime-Kuma's HTTP server, in v1 or v2.
+    Switched to `/`, which is what the image's own bundled Docker healthcheck script checks for a redirect on.
+  - `uptimeKuma.node.tlsRejectUnauthorized` rendered into the `NODE_EXTRA_CA_CERTS` ConfigMap key (a duplicate of
+    the unrelated CA-bundle setting) instead of `NODE_TLS_REJECT_UNAUTHORIZED`.
+- No values were renamed or removed - every environment variable this chart already configures is still valid and
+  unchanged in v2.
+- Operational notes, no chart changes required for these:
+  - Uptime-Kuma's own log line format changed between v1 and v2 - if you ship or parse container logs externally,
+    expect to update those rules.
+  - Badge endpoint duration parameters (`/api/badge/:monitorID/{ping,uptime}/:duration`) are now restricted to
+    `24`, `24h`, `30d`, `1y`-style values.
+  - Legacy browser support was dropped from the bundled web UI.
+  - v2 adds `-slim` and `-rootless` image tag variants, but upstream explicitly recommends against using
+    `-rootless` for the v1 -> v2 migration itself due to known startup issues - this chart's default `image.tag`
+    stays on the standard (non-slim, non-rootless) variant.
 
 ## Parameters
 
 ### Uptime-Kuma Image parameters
 
-| Name                | Description                                                         | Value                 |
-| ------------------- | ------------------------------------------------------------------- | --------------------- |
-| `image.registry`    | The Docker registry to pull the image from                          | `docker.io`           |
-| `image.repository`  | The registry repository to pull the image from                      | `louislam/uptimeKuma` |
-| `image.tag`         | The image tag to pull                                               | `'1.23.11'`           |
-| `image.digest`      | The image digest to pull                                            | `""`                  |
-| `image.pullPolicy`  | The Kubernetes image pull policy                                    | `IfNotPresent`        |
-| `image.pullSecrets` | A list of secrets to use for pulling images from private registries | `[]`                  |
+| Name                | Description                                                         | Value                  |
+| ------------------- | ------------------------------------------------------------------- | ---------------------- |
+| `image.registry`    | The Docker registry to pull the image from                          | `docker.io`            |
+| `image.repository`  | The registry repository to pull the image from                      | `louislam/uptime-kuma` |
+| `image.tag`         | The image tag to pull                                               | `2.5.6`                |
+| `image.digest`      | The image digest to pull                                            | `""`                   |
+| `image.pullPolicy`  | The Kubernetes image pull policy                                    | `IfNotPresent`         |
+| `image.pullSecrets` | A list of secrets to use for pulling images from private registries | `[]`                   |
 
 ### Uptime-Kuma Name overrides
 

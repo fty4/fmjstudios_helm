@@ -1,5 +1,5 @@
-# Default Helm values for fmjstudios/paperless-ngx.
-# Reference: https://github.com/fmjstudios/helm
+# Default Helm values for adnoctem/paperless-ngx.
+# Reference: https://github.com/adnoctem/charts
 
 # This is a YAML-formatted file.
 # Declare variables to be passed into your templates.
@@ -19,7 +19,7 @@
 image:
   registry: ghcr.io
   repository: paperless-ngx/paperless-ngx
-  tag: "2.10.1"
+  tag: "3.3.0"
   digest: ""
   ## Specify a imagePullPolicy
   ## Defaults to 'Always' if image tag is 'latest', else set to 'IfNotPresent'
@@ -52,7 +52,7 @@ fullnameOverride: ""
 ## Paperless configuration
 ## ref: https://docs.paperless-ngx.com/configuration/
 paperless:
-  ## @param paperless.domain [string] Define the domain name for Paperless - will be re-used in Ingress
+  ## @param paperless.domain [string] Define the domain name for Paperless - will be reused in Ingress
   ##
   domain: ""
   ## @param paperless.appTitle [string] If set, overrides the default name "Paperless-ngx"
@@ -110,10 +110,15 @@ paperless:
   ## ref: https://docs.paperless-ngx.com/configuration/#PAPERLESS_TIME_ZONE
   ##
   timeZone: UTC
-  ## @param paperless.enableNLTK [string] Enables or disables the advanced natural language processing used during
-  ## automatic classification. If disabled, paperless will still perform some basic text pre-processing before matching.
+  ## @param paperless.enableNLTK [string] Deprecated and no longer rendered; Paperless-ngx 3.2 removed NLTK and always preprocesses supported classifier languages
   ##
   enableNLTK: ""
+  ## @param paperless.classifierMatchThreshold Minimum classifier confidence from 0.0 to 1.0 for correspondents, document types and storage paths; 0 disables the threshold
+  ##
+  classifierMatchThreshold: 0.3
+  ## @param paperless.matchRegexTimeoutSeconds Timeout in seconds for date parsing and user-defined regular expression matching
+  ##
+  matchRegexTimeoutSeconds: 0.1
   ## @param paperless.enableAuditLog [default: true] Enables the audit trail for documents, document types, correspondents, and tags
   ##
   enableAuditLog: true
@@ -132,6 +137,24 @@ paperless:
   ## ref: https://docs.paperless-ngx.com/configuration/#EMPTY_TRASH_DELAY
   ##
   emptyTrashDelay: ""
+
+  ## AI configuration
+  ##
+  ai:
+    ## @param paperless.ai.extraParams Extra LLM request parameters; override provider defaults and are passed upstream without validation
+    ##
+    extraParams: {}
+    embeddingApiKey:
+      ## @param paperless.ai.embeddingApiKey.value [string] Separate embedding backend API key; unset falls back to the main LLM API key
+      ##
+      value: ""
+      existingSecret:
+        ## @param paperless.ai.embeddingApiKey.existingSecret.name [string] Existing Secret containing the embedding API key; takes precedence over value
+        ##
+        name: ""
+        ## @param paperless.ai.embeddingApiKey.existingSecret.key [string, default: apiKey] Key within the existing Secret containing the embedding API key
+        ##
+        key: apiKey
 
   ## Authentication configuration
   ##
@@ -403,7 +426,7 @@ paperless:
       ## @param paperless.data.paths.loggingDir [string] Define a custom logging directory
       ##
       loggingDir: ""
-      ## @param paperless.data.paths.nltkDir [string] Define a custom NLTK processing directory
+      ## @param paperless.data.paths.nltkDir [string] Deprecated and no longer rendered; Paperless-ngx 3.2 removed NLTK data files
       ##
       nltkDir: ""
       ## @param paperless.data.paths.emailCertificateLocation [string] Define a path to a certificate (chain) for TLS verification for mail servers
@@ -453,12 +476,15 @@ paperless:
     ## @param paperless.ocr.additionalLanguages [string] Additional languages that paperless will attempt to use when parsing documents
     ##
     additionalLanguages: ""
-    ## @param paperless.ocr.mode [default: skip] Tell paperless when and how to perform ocr on your documents: `skip`, `redo` and `force`
+    ## @param paperless.ocr.mode [default: auto] Tell paperless when and how to perform ocr on your documents: `auto`, `force`, `redo` or `off`
     ##
-    mode: skip
-    ## @param paperless.ocr.skipArchiveFile [default: never] Specify when you would like paperless to skip creating an archived version of your documents
+    mode: auto
+    ## @param paperless.ocr.archiveFileGeneration [default: always] Controls when paperless generates an archived version of your documents: `auto`, `always` or `never`
+    ## NOTE: as of Paperless-ngx 3.0, this replaces the removed `PAPERLESS_OCR_SKIP_ARCHIVE_FILE` setting - the default
+    ##       here (`always`) preserves this chart's previous behavior (which always generated an archive); set to
+    ##       `auto` to switch to the current upstream default instead
     ##
-    skipArchiveFile: never
+    archiveFileGeneration: always
     ## @param paperless.ocr.clean [default: true] Tells paperless to use unpaper to clean any input document before sending it to tesseract
     ## The following modes are available: `clean`, `clean-final`
     ##
@@ -504,7 +530,10 @@ paperless:
   ## Consumption configuration
   ##
   consume:
-    ## @param paperless.consume.deleteDuplicates [default: false] When the consumer detects a duplicate document, it will not touch the original document
+    ## @param paperless.consume.deleteDuplicates [default: false] Reject and delete duplicate documents on consumption. As of Paperless-ngx 3.0 this is the only thing that
+    ## controls duplicate rejection at all - previously duplicates were always rejected and this only controlled
+    ## whether the duplicate file itself got deleted afterwards; now leaving this `false` means duplicates are
+    ## consumed and simply flagged as duplicates in the UI instead of being rejected
     ##
     deleteDuplicates: false
     ## @param paperless.consume.recursive [default: false] Enable recursive watching of the consumption directory
@@ -514,10 +543,12 @@ paperless:
     ##
     subdirsAsTags: false
     ## @param paperless.consume.ignorePatterns [string] By default, paperless ignores certain files and folders in the consumption directory
+    ## NOTE: as of Paperless-ngx 3.0, this is matched as a regex, not fnmatch/glob syntax as before - review any
+    ##       existing patterns before upgrading
     ## ref: https://docs.paperless-ngx.com/configuration/#PAPERLESS_CONSUMER_IGNORE_PATTERNS
     ##
     ignorePatterns: ""
-    ## @param paperless.consume.barcodeScanner [default: PYZBAR] Sets the barcode scanner used for barcode functionality
+    ## @param paperless.consume.barcodeScanner [default: PYZBAR] Deprecated and has no effect as of Paperless-ngx 3.0 - zxing-cpp is now the only backend
     ##
     barcodeScanner: PYZBAR
     ## @param paperless.consume.preConsumeScript [string] After some initial validation, Paperless can trigger an arbitrary script if you like before beginning consumption
@@ -569,6 +600,9 @@ paperless:
       ## @param paperless.consume.barcodes.enabled [default: false] Enables the scanning and page separation based on detected barcodes
       ##
       enabled: false
+      ## @param paperless.consume.barcodes.storeValues Store detected barcode contents during consumption; independent of barcode page separation
+      ##
+      storeValues: false
       ## @param paperless.consume.barcodes.tiffSupport [default: false] Whether TIFF image files should be scanned for barcodes
       ##
       tiffSupport: false
@@ -893,6 +927,16 @@ resources: {}
 #   cpu: 100m
 #   memory: 128Mi
 
+## @param extraEnvVars Extra environment variables for the Paperless pod - use this for any of Paperless-ngx's many
+## environment variables that don't have a dedicated value below (e.g. PAPERLESS_TRUSTED_PROXIES and related
+## reverse-proxy settings, PAPERLESS_DB_OPTIONS, PAPERLESS_CONSUMER_POLLING_INTERVAL/STABILITY_DELAY/IGNORE_DIRS,
+## PAPERLESS_TRAIN_TASK_CRON) - see https://docs.paperless-ngx.com/configuration/ for the full list
+## extraEnvVars:
+##   - name: PAPERLESS_TRUSTED_PROXIES
+##     value: "10.0.0.0/8"
+##
+extraEnvVars: []
+
 ## ref: https://kubernetes.io/docs/concepts/storage/volumes/
 ## @param volumes Define volumes for the Paperless pod
 ##
@@ -974,9 +1018,35 @@ securityContext: {}
 ## @section Bitnami&reg; PostgreSQL parameters
 ##
 
+## NOTE: Beginning on August 28th, 2025, Bitnami (VMware/Broadcom) has changed their public offering and will require a commercial license for the use of their charts and images (BSI). The only images available to the public as of now are a small set of hardened images which are only available at the 'latest' tag and meant for testing and development purposes. As such, the PostgreSQL subchart included in this Helm chart is provided for convenience, but users are encouraged to use their own PostgreSQL instance, another PostgreSQL Helm chart or (preferably) an Operator-managed PostgreSQL instance like CloudnativePG, if they do not wish to obtain a Bitnami license.
+## ref: https://github.com/bitnami/charts/issues/35164
+
 ## PostgreSQL configuration
 ## ref: https://github.com/bitnami/charts/blob/main/bitnami/postgresql/values.yaml
 postgresql:
+  ## @section PostgreSQL Global parameters
+  ## Please, note that this will override the parameters, including dependencies, configured to use the global value. Required due to BSI.
+  ##
+  global:
+    ## @param postgresql.global.imageRegistry Global Docker image registry. Force 'docker.io' - required due to BSI.
+    ##
+    imageRegistry: docker.io
+    ## Security parameters
+    ##
+    security:
+      ## @param postgresql.global.security.allowInsecureImages Allows skipping image verification. 'bitnamisecure' images meet the charts' security requirements. Others will require 'true'.
+      allowInsecureImages: false
+
+  ## Bitnami PostgreSQL image version
+  ## ref: https://hub.docker.com/r/bitnami/postgresql/tags/
+  ## @param postgresql.image.registry [default: REGISTRY_NAME] PostgreSQL image registry
+  ## @param postgresql.image.repository [default: REPOSITORY_NAME/postgresql] PostgreSQL image repository. 'bitnamisecure' is recommended.
+  ## @param postgresql.image.tag PostgreSQL image tag. As of August 28th, 2025, only 'latest' is available publicly due to BSI.
+  image:
+    registry: docker.io
+    repository: bitnamisecure/postgresql
+    tag: latest
+
   ## @param postgresql.enabled Enable or disable the PostgreSQL subchart
   ##
   enabled: true
@@ -1041,6 +1111,29 @@ postgresql:
 ## Redis configuration
 ## ref: https://github.com/bitnami/charts/blob/main/bitnami/redis/values.yaml
 redis:
+  ## @section Redis Global parameters
+  ## Please, note that this will override the parameters, including dependencies, configured to use the global value. Required due to BSI.
+  ##
+  global:
+    ## @param redis.global.imageRegistry Global Docker image registry. Force 'docker.io' - required due to BSI.
+    ##
+    imageRegistry: docker.io
+    ## Security parameters
+    ##
+    security:
+      ## @param redis.global.security.allowInsecureImages Allows skipping image verification. 'bitnamisecure' images meet the charts' security requirements. Others will require 'true'.
+      allowInsecureImages: false
+
+  ## Bitnami Redis image version
+  ## ref: https://hub.docker.com/r/bitnami/redis/tags/
+  ## @param redis.image.registry [default: REGISTRY_NAME] Redis image registry
+  ## @param redis.image.repository [default: REPOSITORY_NAME/redis] Redis image repository. 'bitnamisecure' is recommended.
+  ## @param redis.image.tag Redis image tag. As of August 28th, 2025, only 'latest' is available publicly due to BSI.
+  image:
+    registry: docker.io
+    repository: bitnamisecure/redis
+    tag: latest
+
   ## @param redis.enabled Enable or disable the Redis&reg; subchart
   ##
   enabled: true
@@ -1065,11 +1158,11 @@ tika:
   ##
   enabled: true
 
-## @section FMJ Studios Gotenberg parameters
+## @section Ad Noctem Collective Gotenberg parameters
 ##
 
 ## Gotenberg configuration
-## ref: https://github.com/fmjstudios/helm/blob/main/charts/gotenberg/values.yaml
+## ref: https://github.com/adnoctem/charts/blob/main/charts/gotenberg/values.yaml
 gotenberg:
   ## @param gotenberg.enabled Enable or disable the Gotenberg subchart
   ##

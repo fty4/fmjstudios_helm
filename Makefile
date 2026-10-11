@@ -1,4 +1,4 @@
-# Copyright (C) 2024 The FMJ Studios Helm Authors
+# Copyright (C) 2024 The Ad Noctem Collective Helm Authors
 #
 # This program is free software: you can redistribute it and/or modify it under
 # the terms of the GNU General Public License as published by the Free Software
@@ -41,7 +41,7 @@ CHARTS := $(shell find $(ROOT_DIR)/charts $(FIND_FLAGS))
 SOURCES := $(CHARTS)
 
 # Only export variables from here since we do not want to mix the top-level
-# Makfile's notion of 'SOURCES' with the different sub-makes
+# Makefile's notion of 'SOURCES' with the different sub-makes
 export
 
 # ---------------------------
@@ -203,6 +203,7 @@ all:
 else
 all: dist-dir
 	for chart in $(ALL_CHARTS); do $(MAKE) gen CHART=$$chart; done
+	prettier --write '**/*.{json,md}'
 	for chart in $(ALL_CHARTS); do $(MAKE) build CHART=$$chart;	done
 endif
 
@@ -324,9 +325,9 @@ else
 dry-install:
 	$(call log_success, "Running Helm dry installation for chart: $(CHART)")
 ifdef VALUES
-	$(helm) install $(RELEASE_NAME) $(CHART) --values $(CHART)/$(VALUES) --debug --dry-run
+	$(helm) install $(RELEASE_NAME) $(CHART) --values $(CHART)/$(VALUES) --debug --dry-run=client
 else
-	$(helm) install $(RELEASE_NAME) $(CHART) --debug --dry-run
+	$(helm) install $(RELEASE_NAME) $(CHART) --debug --dry-run=client
 endif
 endif
 

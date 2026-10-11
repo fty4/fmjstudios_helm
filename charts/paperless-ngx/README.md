@@ -1,4 +1,14 @@
-# FMJ Studios - Paperless-NGX Helm Chart <img src="https://raw.githubusercontent.com/fmjstudios/artwork/76af35c64fd93c12e851925b0d3801e89978f05a/projects/paperless-ngx/icon/color/paperless-ngx-icon-color.png" alt="Paperless-NGX Logo" width="175" height="175" align="right" loading="lazy"/>
+# Ad Noctem Collective - Paperless-NGX Helm Chart <img src="https://raw.githubusercontent.com/adnoctem/artwork/425046029eaed451f5ced22ddc650059dff11878/projects/paperless-ngx/icon/color/paperless-ngx-icon-color.png" alt="Paperless-NGX Logo" width="175" height="175" align="right" loading="lazy"/>
+
+> [!IMPORTANT]
+> This Helm chart relies on the open-source _Bitnami_ Helm chart `postgresql`. Beginning on August 28th, 2025, _Bitnami_
+> (_VMware_/_Broadcom_) has changed their public offering and will require a commercial license for the use of their charts and images
+> (_Bitnami Secure Images_/_BSI_). The only images available to the public as of now are a small set of hardened images which are only
+> available at the 'latest' tag and meant for testing and development purposes. As such, the PostgreSQL subchart included in this Helm
+> chart is provided for convenience, but users are encouraged to use their own PostgreSQL instance, another PostgreSQL Helm chart or
+> (preferably) an Operator-managed PostgreSQL instance like CloudnativePG, if they do not wish to obtain a Bitnami license.
+>
+> _ref: [`bitnami/charts` - Issue 35164](https://github.com/bitnami/charts/issues/35164)_
 
 Paperless-ngx is a community-supported open-source document management system that transforms your physical documents
 into a searchable online archive so you can keep, well, less paper. Paperless-NGX is the official successor to the
@@ -20,14 +30,14 @@ on [GitHub Container Registry](https://github.com/paperless-ngx/paperless-ngx/pk
 ### Helm Repository Installation
 
 ```shell
-helm repo add fmjstudios https://fmjstudios.github.io/helm
-helm install paperless-ngx fmjstudios/paperless-ngx --version X.Y.Z
+helm repo add adnoctem https://adnoctem.github.io/charts
+helm install paperless-ngx adnoctem/paperless-ngx --version X.Y.Z
 ```
 
 ### OCI Installation
 
 ```shell
-helm install oci://ghcr.io/fmjstudios/helm/paperless-ngx:X.Y.Z
+helm install oci://ghcr.io/adnoctem/charts/paperless-ngx:X.Y.Z
 ```
 
 ## Introduction
@@ -41,10 +51,126 @@ Ingress needs to be explicitly enabled. Lastly the chart configures
 a [PodDisruptionBudget](https://kubernetes.io/docs/tasks/run-application/configure-pdb/) if
 enabled. [RBAC manifests](https://kubernetes.io/docs/reference/access-authn-authz/rbac/) are enabled by default.
 
-The chart supports the configuration of
-all [Paperless-NGX environment variables](https://docs.paperless-ngx.com/configuration/) via the `paperless` key in
-Helm's _values_ and makes use of the official Docker Hub container image, although this is configurable via the Image
-Parameters.
+The chart exposes [Paperless-NGX configuration](https://docs.paperless-ngx.com/configuration/) through the `paperless`
+values and uses the official GitHub Container Registry image. Settings without dedicated values can be supplied
+through `extraEnvVars`. In particular, the existing AI enablement, provider, model and endpoint settings remain on
+that interface; this release adds dedicated values for the new embedding credential and extra request parameters.
+
+## Upgrading
+
+### To 0.5.0 (Paperless-ngx 3.1.3 -> 3.3.0)
+
+Back up the database, media and data volumes before upgrading. Paperless applies database migrations and updates
+its search index during startup; allow them to finish. Review the [3.2.0][release_320] and [3.3.0][release_330]
+release notes and the [tagged configuration reference][configuration_330].
+
+**NLTK is removed.** `paperless.enableNLTK` and `paperless.data.paths.nltkDir` remain accepted for compatibility,
+but no longer render environment variables. Remove these values and any NLTK-specific mounts or environment
+overrides from your configuration. Classification now uses Tantivy preprocessing based on the first OCR language;
+stemming and stop-word removal always apply for supported languages, even if you previously disabled NLTK.
+
+**Retrain the classifier and review automatic matching.** The model format changed, so the previous classifier
+must be rebuilt. The next scheduled training run does this; if training is disabled or you need automatic
+matching immediately, run `python3 manage.py document_create_classifier` in the Paperless container. The new
+`paperless.classifierMatchThreshold` defaults to `0.3` and discards low-confidence correspondent, document-type
+and storage-path predictions. Set it to `0` to disable that cutoff; this does not restore the old preprocessing
+or training algorithm. `paperless.matchRegexTimeoutSeconds` defaults to `0.1`; increase it if matching rules
+or date parsing time out on long documents.
+
+**Redis prefixes now include Celery task results.** With a non-empty `paperless.redis.prefix`, new workers read
+and write results under that prefix; results stored previously without it are not found at the new keys. Let
+running tasks finish before upgrading and avoid running mixed application versions against the same queue.
+The default empty prefix is unaffected.
+
+The Django admin login now uses the application authentication flow, including configured two-factor
+authentication. Check scripts or bookmarks that depend on the old standalone admin login form.
+
+New optional values:
+
+- `paperless.consume.barcodes.storeValues` stores detected barcode contents for display and search. It defaults
+  to `false` and does not require enabling barcode page separation. Reprocess existing documents to populate
+  their barcode contents; only pages within the configured barcode scan limit are read.
+- `paperless.ai.embeddingApiKey` configures a separate embedding key through either `.value` or
+  `.existingSecret.name` and `.existingSecret.key`. An existing Secret takes precedence. Leaving both unset
+  preserves upstream's fallback to the main LLM API key. Other AI settings are still configured through the
+  application UI or `extraEnvVars`; setting an embedding key alone does not enable AI.
+- `paperless.ai.extraParams` accepts an object, rendered as JSON, for provider-specific LLM request options.
+  These options override Paperless' request parameters; the provider must support them.
+
+For example, use an existing embedding credential and a provider-specific request option:
+
+```yaml
+paperless:
+  ai:
+    embeddingApiKey:
+      existingSecret:
+        name: paperless-embedding
+        key: api-key
+    extraParams:
+      temperature: 0.2
+```
+
+Move any existing overrides for these new dedicated settings out of `extraEnvVars` to avoid duplicate definitions.
+Stored application UI settings can override their corresponding environment values; use **Reset to external**
+in the configuration UI when you want Helm-supplied values to apply.
+
+### To 0.4.0 (Paperless-ngx 2.10.1 -> 3.1.3)
+
+> [!WARNING]
+> **Upgrading to v3 can only be performed from v2.20.15** - this is an upstream requirement, not a chart limitation.
+> If you're running an existing installation older than `2.20.15`, first upgrade this chart's `appVersion` to
+> `2.20.15`, let it run its migrations, and only then upgrade further to `3.1.3`. Skipping this step is unsupported
+> by upstream and may leave your database in an inconsistent state.
+>
+> If you have any documents with encryption enabled (deprecated since `paperless-ng 0.9.3`), decrypt them with the
+> `decrypt_documents` management command **before** upgrading - encryption support is removed entirely in v3.
+
+This is a major version upgrade with many breaking changes - the full details are in
+[upstream's v3 migration guide](https://docs.paperless-ngx.com/migration-v3/). The items below cover what's
+relevant to this chart specifically.
+
+- **Fixed a bug where the generated Paperless secret key rotated on every `helm upgrade`** (when
+  `paperless.secretKey.value`/`.existingSecret` weren't set), invalidating every active session and other signed
+  token each time the chart was upgraded, completely independent of this version bump. The generated key is now
+  preserved across upgrades.
+- `PAPERLESS_SECRET_KEY` is now a required setting upstream; this chart has always generated one automatically if
+  you don't set `paperless.secretKey.value` yourself, so no action is needed on that front.
+- **Duplicate handling behavior changed by default:** v3 no longer rejects duplicate documents outright - they're
+  consumed and flagged as duplicates in the UI instead. `paperless.consume.deleteDuplicates` (default `false`,
+  unchanged) now controls this rejection behavior itself, not just whether the duplicate file gets cleaned up
+  afterwards as it did in v2. Set it to `true` if you want the old reject-on-duplicate behavior back.
+- `paperless.ocr.mode`'s `skip` value is gone, replaced by the new default `auto` - if you had `mode: skip`
+  explicitly set, change it to `auto`.
+- `paperless.ocr.skipArchiveFile` has been renamed to `paperless.ocr.archiveFileGeneration` (the old
+  `PAPERLESS_OCR_SKIP_ARCHIVE_FILE` setting is removed upstream). The new default (`always`) preserves this
+  chart's previous archiving behavior exactly - **the value `never` means the opposite thing in the new setting**
+  (never skip archiving vs. never generate one), so if you had `skipArchiveFile` set to anything, don't carry the
+  literal value over - see the mapping in `values.yaml`'s comments or the upstream migration guide.
+- `paperless.consume.barcodeScanner` is deprecated and no longer has any effect - zxing-cpp is the only barcode
+  backend now. The value is left in `values.yaml` for backward compatibility but is no longer rendered as an
+  environment variable regardless of what it's set to.
+- `paperless.consume.ignorePatterns` is now matched as a regex, not the previous fnmatch/glob syntax - review any
+  existing patterns before upgrading.
+- If you're running behind a reverse proxy (which includes anyone using this chart's Ingress), allauth's login
+  rate limiting now determines the client IP differently and **may reject logins with `403 Forbidden`** until you
+  set `PAPERLESS_TRUSTED_PROXIES`, `PAPERLESS_ALLAUTH_TRUSTED_PROXY_COUNT`, and/or
+  `PAPERLESS_ALLAUTH_TRUSTED_CLIENT_IP_HEADER` via the new `extraEnvVars` - see the
+  [migration guide's section on this](https://docs.paperless-ngx.com/migration-v3/#reverse-proxy-and-login-rate-limiting).
+- Added `extraEnvVars` for the many settings above and others without a dedicated value (`PAPERLESS_DB_OPTIONS`,
+  the renamed `PAPERLESS_CONSUMER_POLLING_INTERVAL`/`STABILITY_DELAY`, `PAPERLESS_TRAIN_TASK_CRON`, etc.).
+- The full-text search backend changed from Whoosh to Tantivy - the index is rebuilt automatically on first
+  startup, no action needed. If you have saved views with a plain search term that happened to match note or
+  custom field content, review them - unqualified queries aren't migrated the way `note:`/`custom_field:`-prefixed
+  ones are (now `notes.note:`/`custom_fields.value:`).
+- If you're on unusually old x86_64 hardware (roughly pre-2008 Intel / pre-2011 AMD, lacking SSE4.2), the document
+  classifier can crash the Celery worker with `SIGILL` due to a NumPy 2.4.0 CPU baseline requirement - if you hit
+  this, set `PAPERLESS_TRAIN_TASK_CRON=disable` via `extraEnvVars`.
+- All task history is cleared during the upgrade (the task tracking system was redesigned) - no action needed.
+- Fixed a stale `artifacthub.io/images` annotation that still referenced `2.4.0` even though `appVersion` was
+  already `2.10.1`, and corrected the license annotation - Paperless-ngx is GPL-3.0, not MIT.
+- The `gotenberg` subchart dependency now points at its current location
+  (`oci://ghcr.io/adnoctem/charts/gotenberg`) - it previously referenced a path from before this repository was
+  renamed, which had never been updated since.
 
 ## Parameters
 
@@ -54,7 +180,7 @@ Parameters.
 | ------------------- | ------------------------------------------------------------------- | ----------------------------- |
 | `image.registry`    | The Docker registry to pull the image from                          | `ghcr.io`                     |
 | `image.repository`  | The registry repository to pull the image from                      | `paperless-ngx/paperless-ngx` |
-| `image.tag`         | The image tag to pull                                               | `2.10.1`                      |
+| `image.tag`         | The image tag to pull                                               | `3.3.0`                       |
 | `image.digest`      | The image digest to pull                                            | `""`                          |
 | `image.pullPolicy`  | The Kubernetes image pull policy                                    | `IfNotPresent`                |
 | `image.pullSecrets` | A list of secrets to use for pulling images from private registries | `[]`                          |
@@ -70,7 +196,7 @@ Parameters.
 
 | Name                                               | Description                                                                                                                                                                                                   | Value            |
 | -------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------- |
-| `paperless.domain`                                 | Define the domain name for Paperless - will be re-used in Ingress                                                                                                                                             | `""`             |
+| `paperless.domain`                                 | Define the domain name for Paperless - will be reused in Ingress                                                                                                                                              | `""`             |
 | `paperless.appTitle`                               | If set, overrides the default name "Paperless-ngx"                                                                                                                                                            | `""`             |
 | `paperless.appLogo`                                | Path to an image file in the `/media/logo` directory, must include 'logo', e.g. `/logo/Atari_logo.svg`                                                                                                        | `""`             |
 | `paperless.secretKey.value`                        | Define a custom secret key for Paperless                                                                                                                                                                      | `""`             |
@@ -86,12 +212,18 @@ Parameters.
 | `paperless.threadsPerWorker`                       | The amount of threads to assign each task worker process within the container                                                                                                                                 | `""`             |
 | `paperless.workerTimeout`                          | The amount of threads to assign each task worker process within the container                                                                                                                                 | `""`             |
 | `paperless.timeZone`                               | Set the time zone here                                                                                                                                                                                        | `UTC`            |
-| `paperless.enableNLTK`                             | Enables or disables the advanced natural language processing used during                                                                                                                                      | `""`             |
+| `paperless.enableNLTK`                             | Deprecated and no longer rendered; Paperless-ngx 3.2 removed NLTK and always preprocesses supported classifier languages                                                                                      | `""`             |
+| `paperless.classifierMatchThreshold`               | Minimum classifier confidence from 0.0 to 1.0 for correspondents, document types and storage paths; 0 disables the threshold                                                                                  | `0.3`            |
+| `paperless.matchRegexTimeoutSeconds`               | Timeout in seconds for date parsing and user-defined regular expression matching                                                                                                                              | `0.1`            |
 | `paperless.enableAuditLog`                         | Enables the audit trail for documents, document types, correspondents, and tags                                                                                                                               | `true`           |
 | `paperless.enableCompression`                      | Enables compression of the responses from the webserver. Defaults to 1, enabling compression.                                                                                                                 | `"1"`            |
 | `paperless.apps`                                   | A comma-separated list of Django apps to be included in Django's INSTALLED_APPS                                                                                                                               | `""`             |
 | `paperless.maxImagePixels`                         | Configures the maximum size of an image PIL will allow to load without warning or error                                                                                                                       | `""`             |
 | `paperless.emptyTrashDelay`                        | Sets how long in days documents remain in the 'trash' before they are permanently deleted                                                                                                                     | `30`             |
+| `paperless.ai.extraParams`                         | Extra LLM request parameters; override provider defaults and are passed upstream without validation                                                                                                           | `{}`             |
+| `paperless.ai.embeddingApiKey.value`               | Separate embedding backend API key; unset falls back to the main LLM API key                                                                                                                                  | `""`             |
+| `paperless.ai.embeddingApiKey.existingSecret.name` | Existing Secret containing the embedding API key; takes precedence over value                                                                                                                                 | `""`             |
+| `paperless.ai.embeddingApiKey.existingSecret.key`  | Key within the existing Secret containing the embedding API key                                                                                                                                               | `apiKey`         |
 | `paperless.auth.autoLoginUsername`                 | Specify a username so that paperless will automatically perform login with the selected user                                                                                                                  | `""`             |
 | `paperless.auth.adminUser`                         | If this environment variable is specified, Paperless automatically creates a superuser with the provided username at start                                                                                    | `""`             |
 | `paperless.auth.adminPassword`                     | Only used when PAPERLESS_ADMIN_USER is set. This will be the password of the automatically created superuser                                                                                                  | `""`             |
@@ -162,7 +294,7 @@ Parameters.
 | `paperless.data.paths.filenameFormat`              | Define a custom filename format                                                                                                                                                                               | `""`             |
 | `paperless.data.paths.filenameFormatRemoveNone`    | Omit placeholders that would resolve to 'none' in filenameFormat                                                                                                                                              | `false`          |
 | `paperless.data.paths.loggingDir`                  | Define a custom logging directory                                                                                                                                                                             | `""`             |
-| `paperless.data.paths.nltkDir`                     | Define a custom NLTK processing directory                                                                                                                                                                     | `""`             |
+| `paperless.data.paths.nltkDir`                     | Deprecated and no longer rendered; Paperless-ngx 3.2 removed NLTK data files                                                                                                                                  | `""`             |
 | `paperless.data.paths.emailCertificateLocation`    | Define a path to a certificate (chain) for TLS verification for mail servers                                                                                                                                  | `""`             |
 | `paperless.data.paths.modelFile`                   | This is where paperless will store the classification model. Default is PAPERLESS_DATA_DIR/classification_model.pickle                                                                                        | `""`             |
 | `paperless.data.paths.supervisordWorkingDir`       | If this environment variable is defined, the supervisord.log and supervisord.pid file will be created under the specified path                                                                                | `""`             |
@@ -174,8 +306,8 @@ Parameters.
 | `paperless.logging.logrotateMaxBackups`            | The number of rotated log files to keep                                                                                                                                                                       | `""`             |
 | `paperless.ocr.language`                           | Customize the language that paperless will attempt to use when parsing documents                                                                                                                              | `eng`            |
 | `paperless.ocr.additionalLanguages`                | Additional languages that paperless will attempt to use when parsing documents                                                                                                                                | `""`             |
-| `paperless.ocr.mode`                               | Tell paperless when and how to perform ocr on your documents: `skip`, `redo` and `force`                                                                                                                      | `skip`           |
-| `paperless.ocr.skipArchiveFile`                    | Specify when you would like paperless to skip creating an archived version of your documents                                                                                                                  | `never`          |
+| `paperless.ocr.mode`                               | Tell paperless when and how to perform ocr on your documents: `auto`, `force`, `redo` or `off`                                                                                                                | `auto`           |
+| `paperless.ocr.archiveFileGeneration`              | Controls when paperless generates an archived version of your documents: `auto`, `always` or `never`                                                                                                          | `always`         |
 | `paperless.ocr.clean`                              | Tells paperless to use unpaper to clean any input document before sending it to tesseract                                                                                                                     | `true`           |
 | `paperless.ocr.deskew`                             | Tells paperless to correct skewing (slight rotation of input images mainly due to improper scanning)                                                                                                          | `true`           |
 | `paperless.ocr.rotatePages`                        | Tells paperless to correct page rotation (90°, 180° and 270° rotation)                                                                                                                                        | `true`           |
@@ -188,11 +320,11 @@ Parameters.
 | `paperless.ocr.userArgs`                           | OCRmyPDF offers many more options. Use this parameter to specify any additional arguments you wish to pass to OCRmyPDF                                                                                        | `""`             |
 | `paperless.conversion.memoryLimit`                 | On smaller systems, or even in the case of Very Large Documents, the consumer may explode, complaining about how it's "unable to extend pixel cache"                                                          | `""`             |
 | `paperless.conversion.tmpDir`                      | Similar to the memory limit, if you've got a small system and your OS mounts /tmp as tmpfs, you should set this to a path that's on a physical disk                                                           | `""`             |
-| `paperless.consume.deleteDuplicates`               | When the consumer detects a duplicate document, it will not touch the original document                                                                                                                       | `false`          |
+| `paperless.consume.deleteDuplicates`               | Reject and delete duplicate documents on consumption. As of Paperless-ngx 3.0 this is the only thing that                                                                                                     | `false`          |
 | `paperless.consume.recursive`                      | Enable recursive watching of the consumption directory                                                                                                                                                        | `false`          |
 | `paperless.consume.subdirsAsTags`                  | Set the names of subdirectories as tags for consumed files. E.g. <CONSUMPTION_DIR>/foo/bar/file.pdf will add the tags "foo"                                                                                   | `false`          |
 | `paperless.consume.ignorePatterns`                 | By default, paperless ignores certain files and folders in the consumption directory                                                                                                                          | `""`             |
-| `paperless.consume.barcodeScanner`                 | Sets the barcode scanner used for barcode functionality                                                                                                                                                       | `PYZBAR`         |
+| `paperless.consume.barcodeScanner`                 | Deprecated and has no effect as of Paperless-ngx 3.0 - zxing-cpp is now the only backend                                                                                                                      | `PYZBAR`         |
 | `paperless.consume.preConsumeScript`               | After some initial validation, Paperless can trigger an arbitrary script if you like before beginning consumption                                                                                             | `""`             |
 | `paperless.consume.postConsumeScript`              | After a document is consumed, Paperless can trigger an arbitrary script if you like                                                                                                                           | `""`             |
 | `paperless.consume.filenameDateOrder`              | Paperless will check the document text for document date information                                                                                                                                          | `""`             |
@@ -205,6 +337,7 @@ Parameters.
 | `paperless.consume.polling.delay`                  | If consumer polling is enabled, sets the delay in seconds between each check (above) paperless will do while waiting for a file to remain unmodified                                                          | `5`              |
 | `paperless.consume.iNotify.delay`                  | Sets the time in seconds the consumer will wait for additional events from inotify before the consumer will consider a file ready and begin consumption                                                       | `0.5`            |
 | `paperless.consume.barcodes.enabled`               | Enables the scanning and page separation based on detected barcodes                                                                                                                                           | `false`          |
+| `paperless.consume.barcodes.storeValues`           | Store detected barcode contents during consumption; independent of barcode page separation                                                                                                                    | `false`          |
 | `paperless.consume.barcodes.tiffSupport`           | Whether TIFF image files should be scanned for barcodes                                                                                                                                                       | `false`          |
 | `paperless.consume.barcodes.string`                | Defines the string to be detected as a separator barcode                                                                                                                                                      | `PATCHT`         |
 | `paperless.consume.barcodes.enableASNBarcode`      | Enables the detection of barcodes in the scanned document and setting the ASN (archive serial number) if a properly formatted barcode is detected                                                             | `false`          |
@@ -324,19 +457,20 @@ Parameters.
 
 ### Pod settings
 
-| Name                | Description                                         | Value |
-| ------------------- | --------------------------------------------------- | ----- |
-| `resources`         | The resource limits/requests for the Paperless pod  | `{}`  |
-| `volumes`           | Define volumes for the Paperless pod                | `[]`  |
-| `volumeMounts`      | Define volumeMounts for the Paperless pod           | `[]`  |
-| `initContainers`    | Define initContainers for the main Paperless server | `[]`  |
-| `nodeSelector`      | Node labels for pod assignment                      | `{}`  |
-| `tolerations`       | Tolerations for pod assignment                      | `[]`  |
-| `affinity`          | Affinity for pod assignment                         | `{}`  |
-| `strategy`          | Specify a deployment strategy for the Paperless pod | `{}`  |
-| `podAnnotations`    | Extra annotations for the Paperless pod             | `{}`  |
-| `podLabels`         | Extra labels for the Paperless pod                  | `{}`  |
-| `priorityClassName` | The name of an existing PriorityClass               | `""`  |
+| Name                | Description                                                                                  | Value |
+| ------------------- | -------------------------------------------------------------------------------------------- | ----- |
+| `resources`         | The resource limits/requests for the Paperless pod                                           | `{}`  |
+| `extraEnvVars`      | Extra environment variables for the Paperless pod - use this for any of Paperless-ngx's many | `[]`  |
+| `volumes`           | Define volumes for the Paperless pod                                                         | `[]`  |
+| `volumeMounts`      | Define volumeMounts for the Paperless pod                                                    | `[]`  |
+| `initContainers`    | Define initContainers for the main Paperless server                                          | `[]`  |
+| `nodeSelector`      | Node labels for pod assignment                                                               | `{}`  |
+| `tolerations`       | Tolerations for pod assignment                                                               | `[]`  |
+| `affinity`          | Affinity for pod assignment                                                                  | `{}`  |
+| `strategy`          | Specify a deployment strategy for the Paperless pod                                          | `{}`  |
+| `podAnnotations`    | Extra annotations for the Paperless pod                                                      | `{}`  |
+| `podLabels`         | Extra labels for the Paperless pod                                                           | `{}`  |
+| `priorityClassName` | The name of an existing PriorityClass                                                        | `""`  |
 
 ### Security context settings
 
@@ -347,29 +481,43 @@ Parameters.
 
 ### Bitnami&reg; PostgreSQL parameters
 
-| Name                                           | Description                                                                                            | Value               |
-| ---------------------------------------------- | ------------------------------------------------------------------------------------------------------ | ------------------- |
-| `postgresql.enabled`                           | Enable or disable the PostgreSQL subchart                                                              | `true`              |
-| `postgresql.auth.enablePostgresUser`           | Assign a password to the "postgres" admin user. Otherwise, remote access will be blocked for this user | `true`              |
-| `postgresql.auth.postgresPassword`             | Password for the "postgres" admin user. Ignored if `auth.existingSecret` is provided                   | `postgres`          |
-| `postgresql.auth.username`                     | Name for a custom user to create                                                                       | `paperless`         |
-| `postgresql.auth.password`                     | Password for the custom user to create. Ignored if `auth.existingSecret` is provided                   | `paperless`         |
-| `postgresql.auth.database`                     | Name for a custom database to create                                                                   | `paperless`         |
-| `postgresql.auth.usePasswordFiles`             | Mount credentials as a files instead of using an environment variable                                  | `false`             |
-| `postgresql.primary.name`                      | Name of the primary database (eg primary, master, leader, ...)                                         | `primary`           |
-| `postgresql.primary.persistence.enabled`       | Enable PostgreSQL Primary data persistence using PVC                                                   | `true`              |
-| `postgresql.primary.persistence.existingClaim` | Name of an existing PVC to use                                                                         | `""`                |
-| `postgresql.primary.persistence.storageClass`  | PVC Storage Class for PostgreSQL Primary data volume                                                   | `""`                |
-| `postgresql.primary.persistence.accessModes`   | PVC Access Mode for PostgreSQL volume                                                                  | `["ReadWriteOnce"]` |
-| `postgresql.primary.persistence.size`          | PVC Storage Request for PostgreSQL volume                                                              | `5Gi`               |
+### PostgreSQL Global parameters
+
+| Name                                             | Description                                                                                                                    | Value                        |
+| ------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------ | ---------------------------- |
+| `postgresql.global.imageRegistry`                | Global Docker image registry. Force 'docker.io' - required due to BSI.                                                         | `docker.io`                  |
+| `postgresql.global.security.allowInsecureImages` | Allows skipping image verification. 'bitnamisecure' images meet the charts' security requirements. Others will require 'true'. | `false`                      |
+| `postgresql.image.registry`                      | PostgreSQL image registry                                                                                                      | `REGISTRY_NAME`              |
+| `postgresql.image.repository`                    | PostgreSQL image repository. 'bitnamisecure' is recommended.                                                                   | `REPOSITORY_NAME/postgresql` |
+| `postgresql.image.tag`                           | PostgreSQL image tag. As of August 28th, 2025, only 'latest' is available publicly due to BSI.                                 | `latest`                     |
+| `postgresql.enabled`                             | Enable or disable the PostgreSQL subchart                                                                                      | `true`                       |
+| `postgresql.auth.enablePostgresUser`             | Assign a password to the "postgres" admin user. Otherwise, remote access will be blocked for this user                         | `true`                       |
+| `postgresql.auth.postgresPassword`               | Password for the "postgres" admin user. Ignored if `auth.existingSecret` is provided                                           | `postgres`                   |
+| `postgresql.auth.username`                       | Name for a custom user to create                                                                                               | `paperless`                  |
+| `postgresql.auth.password`                       | Password for the custom user to create. Ignored if `auth.existingSecret` is provided                                           | `paperless`                  |
+| `postgresql.auth.database`                       | Name for a custom database to create                                                                                           | `paperless`                  |
+| `postgresql.auth.usePasswordFiles`               | Mount credentials as a files instead of using an environment variable                                                          | `false`                      |
+| `postgresql.primary.name`                        | Name of the primary database (eg primary, master, leader, ...)                                                                 | `primary`                    |
+| `postgresql.primary.persistence.enabled`         | Enable PostgreSQL Primary data persistence using PVC                                                                           | `true`                       |
+| `postgresql.primary.persistence.existingClaim`   | Name of an existing PVC to use                                                                                                 | `""`                         |
+| `postgresql.primary.persistence.storageClass`    | PVC Storage Class for PostgreSQL Primary data volume                                                                           | `""`                         |
+| `postgresql.primary.persistence.accessModes`     | PVC Access Mode for PostgreSQL volume                                                                                          | `["ReadWriteOnce"]`          |
+| `postgresql.primary.persistence.size`            | PVC Storage Request for PostgreSQL volume                                                                                      | `5Gi`                        |
 
 ### Bitnami&reg; Redis parameters
 
-| Name                  | Description                                                            | Value        |
-| --------------------- | ---------------------------------------------------------------------- | ------------ |
-| `redis.enabled`       | Enable or disable the Redis&reg; subchart                              | `true`       |
-| `redis.architecture`  | Redis&reg; architecture. Allowed values: `standalone` or `replication` | `standalone` |
-| `redis.auth.password` | Redis&reg; password                                                    | `paperless`  |
+### Redis Global parameters
+
+| Name                                        | Description                                                                                                                    | Value                   |
+| ------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------ | ----------------------- |
+| `redis.global.imageRegistry`                | Global Docker image registry. Force 'docker.io' - required due to BSI.                                                         | `docker.io`             |
+| `redis.global.security.allowInsecureImages` | Allows skipping image verification. 'bitnamisecure' images meet the charts' security requirements. Others will require 'true'. | `false`                 |
+| `redis.image.registry`                      | Redis image registry                                                                                                           | `REGISTRY_NAME`         |
+| `redis.image.repository`                    | Redis image repository. 'bitnamisecure' is recommended.                                                                        | `REPOSITORY_NAME/redis` |
+| `redis.image.tag`                           | Redis image tag. As of August 28th, 2025, only 'latest' is available publicly due to BSI.                                      | `latest`                |
+| `redis.enabled`                             | Enable or disable the Redis&reg; subchart                                                                                      | `true`                  |
+| `redis.architecture`                        | Redis&reg; architecture. Allowed values: `standalone` or `replication`                                                         | `standalone`            |
+| `redis.auth.password`                       | Redis&reg; password                                                                                                            | `paperless`             |
 
 ### Apache&reg; Tika parameters
 
@@ -377,7 +525,7 @@ Parameters.
 | -------------- | ------------------------------------------ | ------ |
 | `tika.enabled` | Enable or disable the Apache Tika subchart | `true` |
 
-### FMJ Studios Gotenberg parameters
+### Ad Noctem Collective Gotenberg parameters
 
 | Name                                             | Description                                                                      | Value   |
 | ------------------------------------------------ | -------------------------------------------------------------------------------- | ------- |
@@ -385,3 +533,9 @@ Parameters.
 | `gotenberg.gotenberg.chromium.disableJavaScript` | Disable JavaScript                                                               | `false` |
 | `gotenberg.gotenberg.chromium.allowList`         | Set the allowed URLs for Chromium using a regular expression - defaults to 'All' | `""`    |
 | `gotenberg.gotenberg.logging.level`              | Choose the level of logging detail                                               | `info`  |
+
+<!-- Upgrade references -->
+
+[release_320]: https://github.com/paperless-ngx/paperless-ngx/releases/tag/v3.2.0
+[release_330]: https://github.com/paperless-ngx/paperless-ngx/releases/tag/v3.3.0
+[configuration_330]: https://github.com/paperless-ngx/paperless-ngx/blob/v3.3.0/docs/configuration.md

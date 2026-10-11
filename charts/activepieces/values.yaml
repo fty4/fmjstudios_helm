@@ -1,5 +1,5 @@
-# Default Helm values for fmjstudios/activepieces.
-# Reference: https://github.com/fmjstudios/helm
+# Default Helm values for adnoctem/activepieces.
+# Reference: https://github.com/adnoctem/charts
 
 # This is a YAML-formatted file.
 # Declare variables to be passed into your templates.
@@ -19,7 +19,7 @@
 image:
   registry: docker.io
   repository: activepieces/activepieces
-  tag: 0.28.0
+  tag: 0.92.2
   digest: ""
   ## Specify a imagePullPolicy
   ## Defaults to 'Always' if image tag is 'latest', else set to 'IfNotPresent'
@@ -148,7 +148,9 @@ activepieces:
   ## Queue configuration
   ##
   queue:
-    ## @param activepieces.queue.mode The queue mode to use. Valid values are `memory` and `redis`.
+    ## @param activepieces.queue.mode The queue mode to use. Valid values are `memory` and `redis` - rendered as the
+    ## `AP_REDIS_TYPE` environment variable (`MEMORY`/`STANDALONE`) as of Activepieces 0.70.0, replacing the removed
+    ## `AP_QUEUE_MODE`
     ##
     mode: memory
     ## @param activepieces.queue.enableUI Enable the queue UI (only works with redis)
@@ -167,34 +169,39 @@ activepieces:
   ## Pieces configuration
   ##
   pieces:
-    ## @param activepieces.pieces.source Define the source for pieces: `FILE` for local development, `DB` for database.
-    ## ref: https://www.activepieces.com/docs/install/configurations/environment-variables#setting-piece-source
+    ## @param activepieces.pieces.source [string] Deprecated and no longer rendered - pieces are self-contained bundles as of
+    ## Activepieces 0.86.0 and no longer have a configurable source. Left empty for backward compatibility.
     ##
-    source: CLOUD_AND_DB
+    source: ""
     ## @param activepieces.pieces.syncMode Define the syncing method for Activepieces to download and use pieces.
     ## `NONE` for no metadata syncing / ‘OFFICIAL_AUTO’ for automatic syncing for pieces metadata from cloud
     ##
     syncMode: OFFICIAL_AUTO
 
   ## CoPilot configuration
+  ## NOTE: Code Copilot itself was deprecated upstream in Activepieces 0.71.0 ("will be reintroduced in a different,
+  ## more powerful form in the future"), and `instanceType`/`openAI.endpoint`/`openAI.apiVersion` (Azure OpenAI-specific
+  ## settings) are no longer rendered as a result. `openAI.apiKey` is still rendered as `AP_OPENAI_API_KEY`, which
+  ## upstream has since repurposed to fund Tool Search's semantic embeddings (MCP `ap_search_actions`/`ap_search_triggers`)
+  ## rather than Copilot - it still works, just for a different feature than this section's name suggests
   ##
   copilot:
-    ## @param activepieces.copilot.instanceType Define the instance type. Possible values are `AZURE_OPENAI`, `OPENAI`.
+    ## @param activepieces.copilot.instanceType [string] Deprecated and no longer rendered - see the note above
     ##
-    instanceType: OPENAI
+    instanceType: ""
     ## OpenAI configuration
     ##
     openAI:
-      ## @param activepieces.copilot.openAI.apiKey Define the OpenAI API key. This is required only if you want to enable code copilot
+      ## @param activepieces.copilot.openAI.apiKey [string] Rendered as `AP_OPENAI_API_KEY`, which now funds Tool Search's embeddings rather than Copilot - see the note above
       ##
       apiKey: ""
-      ## @param activepieces.copilot.openAI.endpoint Define the OpenAI Endpoint. This is required only if you want to enable code copilot
+      ## @param activepieces.copilot.openAI.endpoint [string] Deprecated and no longer rendered - see the note above
       ##
       endpoint: ""
-      ## @param activepieces.copilot.openAI.apiVersion Define the OpenAI API version. This is required only if you want to enable code copilot
+      ## @param activepieces.copilot.openAI.apiVersion [string] Deprecated and no longer rendered - see the note above
       ##
       apiVersion: ""
-      ## @param activepieces.copilot.openAI.existingSecret The name of an existing Secret containing a `apiKey`
+      ## @param activepieces.copilot.openAI.existingSecret [string] The name of an existing Secret containing an `apiKey` key, for `AP_OPENAI_API_KEY` - see the note above
       ##
       existingSecret: ""
 
@@ -214,21 +221,42 @@ activepieces:
   ## Sandbox configuration
   ##
   sandbox:
-    ## @param activepieces.sandbox.executionMode Define the execution mode. Valid values are `UNSANDBOXED` and `SANDBOXED`
+    ## @param activepieces.sandbox.executionMode Define the execution mode. Valid values are `UNSANDBOXED`, `SANDBOX_PROCESS`,
+    ## `SANDBOX_CODE_ONLY` or `SANDBOX_CODE_AND_PROCESS` - `SANDBOXED` was renamed to `SANDBOX_PROCESS` in Activepieces 0.71.0
     ##
     executionMode: UNSANDBOXED
-    ## @param activepieces.sandbox.runTimeSeconds Maximum allowed runtime for a flow
+    ## @param activepieces.sandbox.flowTimeoutSeconds Maximum allowed runtime for a flow, in seconds - rendered as
+    ## `AP_FLOW_TIMEOUT_SECONDS` as of Activepieces 0.30.0, replacing the removed `AP_SANDBOX_RUN_TIME_SECONDS`
     ##
-    runTimeSeconds: false
+    flowTimeoutSeconds: false
     ## @param activepieces.sandbox.propagatedEnvVars Environment variables that will be propagated to the sandboxed code.
     ## If you are using it for pieces, we strongly suggests keeping everything in the authentication object to make sure it works across AP instances
     ##
     propagatedEnvVars: ""
 
-  ## @param activepieces.dataRetentionDays The number of days to retain execution data, logs and events
+  ## @param activepieces.dataRetentionDays Days to retain execution data, logs and events; empty uses upstream's 30 days. Set at least one day greater than pausedFlowTimeoutDays to avoid cleanup racing a resume
   ##
   dataRetentionDays: ""
-  ## @param activepieces.workerConcurrency The number of flows to be processed at the same time
+  ## @param activepieces.pausedFlowTimeoutDays Maximum cumulative pause deadline in days from flow creation, rendered as AP_PAUSED_FLOW_TIMEOUT_DAYS; keep below dataRetentionDays
+  ##
+  pausedFlowTimeoutDays: 30
+  ## @param activepieces.maxFileSizeMB Maximum size in MB of each file uploaded by steps or triggers, including AI file inputs
+  ##
+  maxFileSizeMB: 25
+  ## @param activepieces.aiCreditUsdValue Dollar value of one managed AI credit; must be positive. Calls using your own provider key do not use this conversion rate
+  ##
+  aiCreditUsdValue: 0.0005
+  ## @param activepieces.maxBarrierSignals Initial per-platform limit on signals a barrier can wait for, clamped upstream to 1-10000; later changes belong in Platform Admin > Account > Configurations
+  ##
+  maxBarrierSignals: 10000
+  ## @param activepieces.flowRunLogInputTruncateThresholdKB Step input size in KB above which run-log inputs are truncated
+  ##
+  flowRunLogInputTruncateThresholdKB: 2
+  ## @param activepieces.flowRunLogSliceThresholdKB Step output size in KB above which run-log outputs are offloaded to file storage
+  ##
+  flowRunLogSliceThresholdKB: 32
+  ## @param activepieces.workerConcurrency The number of flows to be processed at the same time - rendered as
+  ## `AP_WORKER_CONCURRENCY` as of Activepieces 0.69.0, replacing the removed `AP_FLOW_WORKER_CONCURRENCY`
   ##
   workerConcurrency: 10
   ## @param activepieces.triggerPollInterval The polling interval determines how frequently the system checks for new data updates for pieces with scheduled triggers
@@ -237,12 +265,13 @@ activepieces:
   ## @param activepieces.enableCloudAuth Enable the utilization of oAuth2 applications
   ##
   enableCloudAuth: true
-  ## @param activepieces.telemetry Enable the collection of telemetry information
+  ## @param activepieces.telemetry Initial product analytics setting for platforms without a stored configuration; subsequent changes and deployment-setup telemetry are managed in the admin UI
   ##
   telemetry: false
-  ## @param activepieces.templateSourceURL The endpoint which is queried for templates, remove this and templates will be removed from the UI.
+  ## @param activepieces.templateSourceURL [string] Deprecated and no longer rendered - the templates API moved from
+  ## `/flow-templates` to `/templates` in Activepieces 0.77.0 and is no longer configurable via an environment variable
   ##
-  templateSourceURL: "https://cloud.activepieces.com/api/v1/flow-templates"
+  templateSourceURL: ""
   ## @param activepieces.webhookTimeoutSeconds The default timeout for webhooks
   ##
   webhookTimeoutSeconds: 30
@@ -514,6 +543,16 @@ resources: {}
 #   cpu: 100m
 #   memory: 128Mi
 
+## @param extraEnvVars Extra environment variables for the Activepieces pod - use this for any of Activepieces' many
+## environment variables that don't have a dedicated value below (e.g. AP_SSRF_ALLOW_LIST, AP_ALLOWED_EMBED_ORIGINS,
+## AP_PREWARM_CACHE_ON_STARTUP, AP_DEFAULT_CONCURRENT_JOBS_LIMIT, AP_SMTP_* for outgoing email) - see
+## https://www.activepieces.com/docs/install/reference/environment-variables for the full list
+## extraEnvVars:
+##   - name: AP_SSRF_ALLOW_LIST
+##     value: "10.0.0.0/8"
+##
+extraEnvVars: []
+
 ## ref: https://kubernetes.io/docs/concepts/storage/volumes/
 ## @param volumes Define volumes for the Activepieces pod
 ##
@@ -595,9 +634,35 @@ securityContext: {}
 ## @section Bitnami&reg; PostgreSQL parameters
 ##
 
+## NOTE: Beginning on August 28th, 2025, Bitnami (VMware/Broadcom) has changed their public offering and will require a commercial license for the use of their charts and images (BSI). The only images available to the public as of now are a small set of hardened images which are only available at the 'latest' tag and meant for testing and development purposes. As such, the PostgreSQL subchart included in this Helm chart is provided for convenience, but users are encouraged to use their own PostgreSQL instance, another PostgreSQL Helm chart or (preferably) an Operator-managed PostgreSQL instance like CloudnativePG, if they do not wish to obtain a Bitnami license.
+## ref: https://github.com/bitnami/charts/issues/35164
+
 ## PostgreSQL configuration
 ## ref: https://github.com/bitnami/charts/blob/main/bitnami/postgresql/values.yaml
 postgresql:
+  ## @section PostgreSQL Global parameters
+  ## Please, note that this will override the parameters, including dependencies, configured to use the global value. Required due to BSI.
+  ##
+  global:
+    ## @param postgresql.global.imageRegistry Global Docker image registry. Force 'docker.io' - required due to BSI.
+    ##
+    imageRegistry: docker.io
+    ## Security parameters
+    ##
+    security:
+      ## @param postgresql.global.security.allowInsecureImages Allows skipping image verification. 'bitnamisecure' images meet the charts' security requirements. Others will require 'true'.
+      allowInsecureImages: false
+
+  ## Bitnami PostgreSQL image version
+  ## ref: https://hub.docker.com/r/bitnami/postgresql/tags/
+  ## @param postgresql.image.registry [default: REGISTRY_NAME] PostgreSQL image registry
+  ## @param postgresql.image.repository [default: REPOSITORY_NAME/postgresql] PostgreSQL image repository. 'bitnamisecure' is recommended.
+  ## @param postgresql.image.tag PostgreSQL image tag. As of August 28th, 2025, only 'latest' is available publicly due to BSI.
+  image:
+    registry: docker.io
+    repository: bitnamisecure/postgresql
+    tag: latest
+
   ## @param postgresql.enabled Enable or disable the PostgreSQL subchart
   ##
   enabled: false
@@ -662,6 +727,29 @@ postgresql:
 ## Redis configuration
 ## ref: https://github.com/bitnami/charts/blob/main/bitnami/redis/values.yaml
 redis:
+  ## @section Redis Global parameters
+  ## Please, note that this will override the parameters, including dependencies, configured to use the global value. Required due to BSI.
+  ##
+  global:
+    ## @param redis.global.imageRegistry Global Docker image registry. Force 'docker.io' - required due to BSI.
+    ##
+    imageRegistry: docker.io
+    ## Security parameters
+    ##
+    security:
+      ## @param redis.global.security.allowInsecureImages Allows skipping image verification. 'bitnamisecure' images meet the charts' security requirements. Others will require 'true'.
+      allowInsecureImages: false
+
+  ## Bitnami Redis image version
+  ## ref: https://hub.docker.com/r/bitnami/redis/tags/
+  ## @param redis.image.registry [default: REGISTRY_NAME] Redis image registry
+  ## @param redis.image.repository [default: REPOSITORY_NAME/redis] Redis image repository. 'bitnamisecure' is recommended.
+  ## @param redis.image.tag Redis image tag. As of August 28th, 2025, only 'latest' is available publicly due to BSI.
+  image:
+    registry: docker.io
+    repository: bitnamisecure/redis
+    tag: latest
+
   ## @param redis.enabled Enable or disable the Redis&reg; subchart
   ##
   enabled: false

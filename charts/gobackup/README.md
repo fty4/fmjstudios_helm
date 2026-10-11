@@ -1,4 +1,4 @@
-# FMJ Studios - GoBackup Helm Chart <img src="https://user-images.githubusercontent.com/5518/205909959-12b92929-4ac5-4bb5-9111-6f9a3ed76cf6.png" alt="GoBackup Logo" width="175" height="175" align="right" loading="lazy"/>
+# Ad Noctem Collective - GoBackup Helm Chart <img src="https://user-images.githubusercontent.com/5518/205909959-12b92929-4ac5-4bb5-9111-6f9a3ed76cf6.png" alt="GoBackup Logo" width="175" height="175" align="right" loading="lazy"/>
 
 GoBackup is a CLI and Web UI for database backups to local, cloud or remote storage (FTP, SCP, S3, GCS, Aliyun
 OSS ...) with encryption support. It supports running these tasks on a schedule defined within a configuration file.
@@ -15,14 +15,14 @@ on [Docker Hub](https://hub.docker.com/r/huacnlee/gobackup).
 ### Helm Repository Installation
 
 ```shell
-helm repo add fmjstudios https://fmjstudios.github.io/helm
-helm install gobackup fmjstudios/gobackup --version X.Y.Z
+helm repo add adnoctem https://adnoctem.github.io/charts
+helm install gobackup adnoctem/gobackup --version X.Y.Z
 ```
 
 ### OCI Installation
 
 ```shell
-helm install oci://ghcr.io/fmjstudios/helm/gobackup:X.Y.Z
+helm install oci://ghcr.io/adnoctem/charts/gobackup:X.Y.Z
 ```
 
 ## Introduction
@@ -39,6 +39,30 @@ The chart supports the configuration of all [GoBackup configuration options](htt
 via the `gobackup` key in Helm's _values_ and makes use of the official Docker Hub container image, although this is
 configurable via the Image Parameters.
 
+> [!NOTE]
+> This chart passes most `gobackup.models[].databases[].config`, `.storages[].config`, and `.notifiers[].config`
+> keys straight through to GoBackup's YAML config, but the `username`/`password` keys of every entry are always
+> wired to a generated environment variable backed by a Secret (see Common Secret parameters below) - a database,
+> storage, or notifier type that authenticates without a username/password pair (e.g. `sqlite`, or a `local`
+> storage) is not currently supported by this chart, even though GoBackup itself doesn't require credentials for
+> those types.
+
+## Upgrading
+
+### To 0.4.0 (GoBackup 2.11.2 -> 3.1.1)
+
+- `appVersion` bumped from `2.11.2` to `3.1.1`. Review the
+  [upstream changelog](https://github.com/gobackup/gobackup/releases) for anything between those versions that
+  affects your configuration; notably, MSSQL database config keys switched to snake_case
+  (e.g. `trust_server_certificate`, `all_databases`, `skip_databases`) somewhere in that range - update your
+  `gobackup.models[].databases[].config` accordingly if you use MSSQL.
+- Added support for the `firebird` database type and the `googlechat` notifier type, both added upstream since
+  2.16.0/2.13.0 respectively.
+- Added `gobackup.web.enabled` to allow disabling the built-in Web UI entirely; it defaults to `true`, matching
+  previous behavior.
+- Fixed two internal validation helpers that checked for the wrong model key (dead code - neither is currently
+  invoked from any template, so this has no behavioral effect).
+
 ## Parameters
 
 ### Image parameters
@@ -47,7 +71,7 @@ configurable via the Image Parameters.
 | ------------------- | ------------------------------------------------------------------- | ------------------- |
 | `image.registry`    | The Docker registry to pull the image from                          | `docker.io`         |
 | `image.repository`  | The registry repository to pull the image from                      | `huacnlee/gobackup` |
-| `image.tag`         | The image tag to pull                                               | `v2.11.2`           |
+| `image.tag`         | The image tag to pull                                               | `v3.1.1`            |
 | `image.digest`      | The image digest to pull                                            | `""`                |
 | `image.pullPolicy`  | The Kubernetes image pull policy                                    | `IfNotPresent`      |
 | `image.pullSecrets` | A list of secrets to use for pulling images from private registries | `[]`                |
@@ -64,6 +88,7 @@ configurable via the Image Parameters.
 | Name                                | Description                                                                                           | Value                    |
 | ----------------------------------- | ----------------------------------------------------------------------------------------------------- | ------------------------ |
 | `gobackup.workdir`                  | Define a working directory for GoBackup to generate temporary files                                   | `/tmp`                   |
+| `gobackup.web.enabled`              | Whether to enable the built-in Web UI at all                                                          | `true`                   |
 | `gobackup.web.host`                 | The host the network socket should bind to. You will most likely never change this.                   | `""`                     |
 | `gobackup.web.port`                 | The port to bind the network socket to                                                                | `2703`                   |
 | `gobackup.web.username`             | The HTTP Basic Auth username                                                                          | `""`                     |

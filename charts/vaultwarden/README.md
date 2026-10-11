@@ -1,4 +1,4 @@
-# FMJ Studios - Vaultwarden Helm Chart <img src="https://raw.githubusercontent.com/fmjstudios/artwork/2fd182517d56ffeee59f82ec75b651e92344d151/projects/vaultwarden/icon/black/vaultwarden-icon-black.png" alt="Vaultwarden Logo" width="175" height="175" align="right" loading="lazy"/>
+# Ad Noctem Collective - Vaultwarden Helm Chart <img src="https://raw.githubusercontent.com/adnoctem/artwork/425046029eaed451f5ced22ddc650059dff11878/projects/vaultwarden/icon/black/vaultwarden-icon-black.png" alt="Vaultwarden Logo" width="175" height="175" align="right" loading="lazy"/>
 
 Vaultwarden is an unofficial Bitwarden server implementation written in Rust. It is compatible with
 the [official Bitwarden clients](https://bitwarden.com/download/), and is ideal for self-hosted deployments where
@@ -17,14 +17,14 @@ on [Docker Hub](https://hub.docker.com/r/vaultwarden/server).
 ### Helm Repository Installation
 
 ```shell
-helm repo add fmjstudios https://fmjstudios.github.io/helm
-helm install vaultwarden fmjstudios/vaultwarden --version X.Y.Z
+helm repo add adnoctem https://adnoctem.github.io/charts
+helm install vaultwarden adnoctem/vaultwarden --version X.Y.Z
 ```
 
 ### OCI Installation
 
 ```shell
-helm install oci://ghcr.io/fmjstudios/helm/vaultwarden:X.Y.Z
+helm install oci://ghcr.io/adnoctem/charts/vaultwarden:X.Y.Z
 ```
 
 ## Introduction
@@ -39,10 +39,72 @@ Ingress needs to be explicitly enabled. Lastly the chart configures
 a [PodDisruptionBudget](https://kubernetes.io/docs/tasks/run-application/configure-pdb/) if
 enabled. [RBAC manifests](https://kubernetes.io/docs/reference/access-authn-authz/rbac/) are enabled by default.
 
-The chart supports the configuration of
-all [Vaultwarden environment variables](https://github.com/dani-garcia/vaultwarden/blob/main/.env.template) via
+The chart exposes [Vaultwarden configuration](https://github.com/dani-garcia/vaultwarden/blob/1.37.4/.env.template) via
 the `vaultwarden` key in Helm's _values_ and makes use of the official Docker Hub container image, although this is
 configurable via the Image Parameters.
+
+## Upgrading
+
+### To 0.6.0 (Vaultwarden 1.37.3 -> 1.37.4)
+
+This release includes upstream security fixes and database migrations. Back up the database and persistent
+data before upgrading and review the [1.37.4 release notes][release_1374].
+
+**Review proxy trust before upgrading.** The chart retains `vaultwarden.ipHeader: X-Forwarded-For`, but Vaultwarden
+now selects the rightmost address outside the trusted proxy set instead of the leftmost address. The new
+`vaultwarden.ipHeaderTrustedProxies` value renders `IP_HEADER_TRUSTED_PROXIES` and defaults to upstream's `local`
+(non-global addresses). With multiple proxies, include the addresses or CIDRs of every proxy in the chain,
+including any public CDN proxies. Otherwise logs and rate limits can use an intermediate proxy's address.
+
+For example, replace these documentation addresses with your own proxy addresses and ranges:
+
+```yaml
+vaultwarden:
+  ipHeader: X-Forwarded-For
+  ipHeaderTrustedProxies: "10.42.0.0/16,203.0.113.10,2001:db8:1234::/48"
+```
+
+Avoid `all` unless direct access to Vaultwarden is blocked and a trusted proxy controls the header. Use
+`vaultwarden.ipHeader: none` to ignore forwarded headers. Review any saved admin-panel overrides as well.
+
+**Remove unsupported experimental flags.** Check `vaultwarden.experimental.featureFlags` and saved admin settings.
+Removed flags include `ssh-agent`, `ssh-key-vault-item`, `mutual-tls`, `anon-addy-self-host-alias`,
+`simple-login-self-host-alias`, `pm-25373-windows-biometrics-v2`, `pm-26340-linux-biometrics-v2`,
+`desktop-ui-migration-milestone-1` through `-4`, `cxp-import-mobile` and `cxp-export-mobile`. They produce startup
+warnings and prevent saving admin settings. Use the supported list in `values.yaml` or the tagged
+[upstream configuration source][config_1374]; the default empty list needs no change.
+
+Other compatibility changes:
+
+- Upgrade CLI clients using `bw send receive`: versions 2026.4.2 and older cannot receive Sends from this release.
+  Creating and managing Sends remains supported.
+- Duo's legacy iframe prompt and `DUO_USE_IFRAME` are removed. Remove any external override and use the supported
+  Duo login flow. The chart's existing Duo credentials remain applicable.
+- Custom email templates can now override `email/recover_twofactor`, the recovery-code login notification.
+- The legacy `POST /identity/accounts/register` and `POST /api/accounts/prelogin` endpoints are removed;
+  update integrations that still call them.
+
+**Alpine with MySQL/MariaDB:** servers without native TLS support may fail to connect with this image. Upstream's
+workaround is available through `vaultwarden.database.mysqlDisablePeerVerification: true` when
+`vaultwarden.database.type: mysql`. This sets `MARIADB_TLS_DISABLE_PEER_VERIFICATION=1` and weakens TLS peer
+verification. Leave it disabled for databases with verified TLS; SQLite and PostgreSQL do not use this option.
+
+If organization admins were not fully trusted, rotate the organization API key after updating, as recommended
+upstream; older releases exposed it to admins.
+
+### To 0.4.0 (Vaultwarden 1.30.5 -> 1.37.2)
+
+- Corrected the `artifacthub.io/license` annotation: Vaultwarden ships under AGPL-3.0, not MIT as previously listed.
+- `WEBSOCKET_ENABLED` was renamed to `ENABLE_WEBSOCKET` upstream; `vaultwarden.websocket.enabled` still controls it.
+- Upstream removed the separate WebSocket port in `1.31.0` - WebSocket traffic is now served on the main Rocket
+  port. `vaultwarden.websocket.port` is deprecated, no longer rendered into the ConfigMap, and no longer exposed
+  as a second container port.
+- Removed a broken Ingress rule that routed `/notifications/hub` to a Service port that was never actually
+  defined by this chart's Service template - this was a pre-existing bug, unrelated to the WebSocket port removal
+  above, and required no user action since the rule never worked.
+- Added SSO (OpenID Connect) login support via the new `vaultwarden.sso` values block. `sso.clientId` /
+  `sso.clientSecret` are stored in a dedicated Secret (or point at `sso.existingSecret.name`) analogous to the
+  existing SMTP credentials handling.
 
 ## Parameters
 
@@ -52,7 +114,7 @@ configurable via the Image Parameters.
 | ------------------- | ------------------------------------------------------------------- | -------------------- |
 | `image.registry`    | The Docker registry to pull the image from                          | `docker.io`          |
 | `image.repository`  | The registry repository to pull the image from                      | `vaultwarden/server` |
-| `image.tag`         | The image tag to pull                                               | `1.30.5-alpine`      |
+| `image.tag`         | The image tag to pull                                               | `1.37.4-alpine`      |
 | `image.digest`      | The image digest to pull                                            | `""`                 |
 | `image.pullPolicy`  | The Kubernetes image pull policy                                    | `IfNotPresent`       |
 | `image.pullSecrets` | A list of secrets to use for pulling images from private registries | `[]`                 |
@@ -72,138 +134,155 @@ configurable via the Image Parameters.
 
 ### Vaultwarden Configuration parameters
 
-| Name                                                     | Description                                                                                                       | Value                      |
-| -------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------- | -------------------------- |
-| `vaultwarden.domain`                                     | The domain of the Vaultwarden installation                                                                        | `""`                       |
-| `vaultwarden.web.enabled`                                | Whether or not to enable the Vaultwarden Web UI - enabled by default                                              | `true`                     |
-| `vaultwarden.web.folder`                                 | A custom folder from which to load assets for the Web UI - defaults to 'web-vault/'                               | `""`                       |
-| `vaultwarden.allowSends`                                 | Controls whether users are allowed to create Bitwarden Sends. Applies globally to all users.                      | `true`                     |
-| `vaultwarden.allowEmergencyAccess`                       | Controls whether users can enable emergency access to their accounts. Applies globally to all users.              | `true`                     |
-| `vaultwarden.allowEmailChange`                           | Controls whether users can change their email. Applies globally to all users.                                     | `true`                     |
-| `vaultwarden.enableOrgEvents`                            | Controls whether event logging is enabled for organizations. Applies to organizations.                            | `false`                    |
-| `vaultwarden.retainEventsDays`                           | Number of days to retain events stored in the database.                                                           | `""`                       |
-| `vaultwarden.ipHeader`                                   | The Client IP Header, defaults to "X-Forwarded-For".                                                              | `X-Forwarded-For`          |
-| `vaultwarden.disable2FARemember`                         | Disable 2FA remembrance.                                                                                          | `false`                    |
-| `vaultwarden.orgCreationUsers`                           | Controls which users can create new orgs.                                                                         | `""`                       |
-| `vaultwarden.enableOrgGroups`                            | Controls whether group support is enabled for organizations                                                       | `false`                    |
-| `vaultwarden.allowedIframeAncestors`                     | Allowed iframe ancestors (Know the risks!)                                                                        | `""`                       |
-| `vaultwarden.adminToken.value`                           | The value for the Vaultwarden admin token                                                                         | `""`                       |
-| `vaultwarden.adminToken.disable`                         | Disable token authentication for the admin panel                                                                  | `false`                    |
-| `vaultwarden.adminToken.existingSecret.name`             | The name of an existing Secret containing the admin token                                                         | `""`                       |
-| `vaultwarden.adminToken.existingSecret.key`              | The key name within the previously named existingSecret                                                           | `""`                       |
-| `vaultwarden.data.rootPath`                              | The data folder is used for all files by default                                                                  | `/data`                    |
-| `vaultwarden.data.paths.rsaKey`                          | The file path for the RSA key, 'data/rsa_key' by default                                                          | `""`                       |
-| `vaultwarden.data.paths.iconCache`                       | The path for icon cache, 'data/icon_cache' by default                                                             | `""`                       |
-| `vaultwarden.data.paths.attachments`                     | The mail attachments path, 'data/attachments' by default                                                          | `""`                       |
-| `vaultwarden.data.paths.sends`                           | The mail sends path, 'data/sends' by default                                                                      | `""`                       |
-| `vaultwarden.data.paths.tmp`                             | The temporary data path, 'data/tmp' by default                                                                    | `""`                       |
-| `vaultwarden.data.pvc.size`                              | The size given to PVCs created from the above data                                                                | `5Gi`                      |
-| `vaultwarden.data.pvc.storageClass`                      | The storageClass given to PVCs created from the above data                                                        | `standard`                 |
-| `vaultwarden.data.pvc.reclaimPolicy`                     | The resourcePolicy given to PVCs created from the above data                                                      | `Retain`                   |
-| `vaultwarden.data.pvc.existingClaim`                     | Provide the name to an existing PVC                                                                               | `""`                       |
-| `vaultwarden.email.attemptsLimit`                        | Maximum attempts before an email token is reset requiring a new email                                             | `3`                        |
-| `vaultwarden.email.tokenExpirationTime`                  | Token expiration time                                                                                             | `600`                      |
-| `vaultwarden.email.tokenSize`                            | Email token size                                                                                                  | `6`                        |
-| `vaultwarden.email.smtp.host`                            | Hostname of the Mail server                                                                                       | `""`                       |
-| `vaultwarden.email.smtp.from`                            | The from-address for emails sent by Vaultwarden                                                                   | `""`                       |
-| `vaultwarden.email.smtp.fromName`                        | The from-name for emails sent by Vaultwarden                                                                      | `Vaultwarden`              |
-| `vaultwarden.email.smtp.security`                        | Either 'starttls', 'force_tls' or 'off'                                                                           | `starttls`                 |
-| `vaultwarden.email.smtp.port`                            | SMTP port used                                                                                                    | `587`                      |
-| `vaultwarden.email.smtp.username`                        | SMTP user                                                                                                         | `""`                       |
-| `vaultwarden.email.smtp.password`                        | SMTP password                                                                                                     | `""`                       |
-| `vaultwarden.email.smtp.auth`                            | Defaults for SSL is "Plain" and "Login" and nothing for Non-SSL connections.                                      | `Plain`                    |
-| `vaultwarden.email.smtp.existingSecret.name`             | The name of an existing BasicAuth secret                                                                          | `""`                       |
-| `vaultwarden.email.smtp.timeout`                         | General SMTP settings                                                                                             | `15`                       |
-| `vaultwarden.email.smtp.sendmail.enabled`                | Whether or not to use sendmail for sending emails                                                                 | `false`                    |
-| `vaultwarden.email.smtp.sendmail.path`                   | The path to which sendmail binary to use.                                                                         | `""`                       |
-| `vaultwarden.email.smtp.helloName`                       | Server name sent during the SMTP HELLO                                                                            | `""`                       |
-| `vaultwarden.email.smtp.embedImages`                     | Embed images as email attachments                                                                                 | `false`                    |
-| `vaultwarden.email.smtp.acceptInvalidHostnames`          | Accept Invalid Hostnames                                                                                          | `false`                    |
-| `vaultwarden.email.smtp.acceptInvalidCertificates`       | Accept Invalid Certificates                                                                                       | `false`                    |
-| `vaultwarden.email.smtp.requireDeviceEmail`              | Require new device emails.                                                                                        | `false`                    |
-| `vaultwarden.email.smtp.debug`                           | Enable debug mode                                                                                                 | `false`                    |
-| `vaultwarden.email.twoFactor.enforceInviteVerification`  | Setup email 2FA regardless of any organization policy                                                             | `false`                    |
-| `vaultwarden.email.twoFactor.autoFallback`               | Automatically setup email 2FA as fallback provider when needed                                                    | `false`                    |
-| `vaultwarden.websocket.enabled`                          | Whether to enable Websocket push notifications                                                                    | `true`                     |
-| `vaultwarden.websocket.port`                             | The port websocket should bind to                                                                                 | `3012`                     |
-| `vaultwarden.database.type`                              | Choose the database type. Can be 'sqlite' or (external) 'mysql'/'postgresql'                                      | `"sqlite"`                 |
-| `vaultwarden.database.user`                              | Provide the username to the (external) Vaultwarden database - ignored if the database type is 'sqlite'            | `""`                       |
-| `vaultwarden.database.password`                          | Provide the password to the (external) Vaultwarden database - ignored if the database type is 'sqlite'            | `""`                       |
-| `vaultwarden.database.host`                              | Provide the host to the (external) Vaultwarden database - ignored if the database type is 'sqlite'                | `""`                       |
-| `vaultwarden.database.port`                              | Provide the port to the (external) Vaultwarden database - ignored if the database type is 'sqlite'                | `""`                       |
-| `vaultwarden.database.name`                              | Provide the name to the (external) Vaultwarden database - ignored if the database type is 'sqlite'                | `""`                       |
-| `vaultwarden.database.uri`                               | Manually provide the entire URI to the (external) Vaultwarden database - ignored if the database type is 'sqlite' | `""`                       |
-| `vaultwarden.database.existingSecret.name`               | The name of an existing secret                                                                                    | `""`                       |
-| `vaultwarden.database.existingSecret.key`                | The key within the existing secret                                                                                | `""`                       |
-| `vaultwarden.database.enableWAL`                         | Enable write-ahead logging                                                                                        | `false`                    |
-| `vaultwarden.database.maxConnections`                    | Maximum database connections                                                                                      | `10`                       |
-| `vaultwarden.database.timeout`                           | Database timeout                                                                                                  | `30`                       |
-| `vaultwarden.database.connectionRetries`                 | Database connection retries                                                                                       | `15`                       |
-| `vaultwarden.limits.logins.ratelimitSeconds`             | Number of seconds between login requests                                                                          | `60`                       |
-| `vaultwarden.limits.logins.ratelimitMaxBurst`            | Allow bursts of requests up to this amount                                                                        | `10`                       |
-| `vaultwarden.limits.logins.adminRatelimitSeconds`        | Number of seconds between admin login requests                                                                    | `300`                      |
-| `vaultwarden.limits.logins.adminRatelimitMaxBurst`       | Allow bursts of admin requests up to this amount                                                                  | `300`                      |
-| `vaultwarden.limits.logins.adminSessionLifetime`         | The lifetime of an admin session                                                                                  | `20`                       |
-| `vaultwarden.limits.attachments.orgLimit`                | Per-organization attachment storage limit (KB)                                                                    | `""`                       |
-| `vaultwarden.limits.attachments.userLimit`               | Per-user attachment storage limit (KB)                                                                            | `""`                       |
-| `vaultwarden.limits.send.userLimit`                      | Per-user send storage limit (KB)                                                                                  | `""`                       |
-| `vaultwarden.passwords.iterations`                       | Number of password hash iterations                                                                                | `350000`                   |
-| `vaultwarden.passwords.hintsAllowed`                     | Allow sending of password hints                                                                                   | `false`                    |
-| `vaultwarden.passwords.showHint`                         | Show hints directly on login page - disabled by default                                                           | `false`                    |
-| `vaultwarden.signup.allowed`                             | Whether or not new users can register                                                                             | `true`                     |
-| `vaultwarden.signup.verify`                              | Whether email verification is need to sign up                                                                     | `true`                     |
-| `vaultwarden.signup.verifyResendTime`                    | How many seconds to wait to resend a verification email                                                           | `3600`                     |
-| `vaultwarden.signup.verifyResendLimit`                   | How many verificatione mails will be sent in total                                                                | `6`                        |
-| `vaultwarden.signup.domainWhitelist`                     | A comma-separated list of domains which can always register                                                       | `""`                       |
-| `vaultwarden.auth.authenticatorDisableTimeDrift`         | Allow 2FA time drift                                                                                              | `false`                    |
-| `vaultwarden.auth.incomplete2FATimeLimit`                | Minutes to wait before a 2FA login is considered incomplete                                                       | `3`                        |
-| `vaultwarden.auth.yubikey.enable`                        | Whether to enable authentication via YubiKeys                                                                     | `false`                    |
-| `vaultwarden.auth.yubikey.clientId`                      | Yubikey client ID                                                                                                 | `""`                       |
-| `vaultwarden.auth.yubikey.clientSecret`                  | Yubikey client Secret                                                                                             | `""`                       |
-| `vaultwarden.auth.yubikey.server`                        | Yubikey server                                                                                                    | `""`                       |
-| `vaultwarden.auth.duo.enable`                            | Whether to enable authentication via Duo                                                                          | `false`                    |
-| `vaultwarden.auth.duo.integrationKey`                    | Duo integration key                                                                                               | `""`                       |
-| `vaultwarden.auth.duo.secretKey`                         | Duo secret key                                                                                                    | `""`                       |
-| `vaultwarden.auth.duo.host`                              | Duo host                                                                                                          | `""`                       |
-| `vaultwarden.invitations.allowed`                        | Invitations org admins to invite users, even when signups are disabled                                            | `true`                     |
-| `vaultwarden.invitations.orgName`                        | Generic organization name for Emails                                                                              | `Vaultwarden`              |
-| `vaultwarden.invitations.expirationHours`                | Number of hours which an email invitation lasts                                                                   | `120`                      |
-| `vaultwarden.pushNotifications.enabled`                  | Whether to enable push notifications                                                                              | `false`                    |
-| `vaultwarden.pushNotifications.installationId`           | Installation ID from 'https://bitwarden.com/host'                                                                 | `""`                       |
-| `vaultwarden.pushNotifications.installationKey`          | Installation Key from 'https://bitwarden.com/host'                                                                | `""`                       |
-| `vaultwarden.pushNotifications.relayUri`                 | Set a custom relay URI for push notifications                                                                     | `""`                       |
-| `vaultwarden.pushNotifications.identityUri`              | Set a custom identity URI for push notifications                                                                  | `""`                       |
-| `vaultwarden.hibpApiKey.value`                           | The HIBP API key-value                                                                                            | `""`                       |
-| `vaultwarden.hibpApiKey.existingSecret.name`             | The name of an existing Secret containing the HIBP API key                                                        | `""`                       |
-| `vaultwarden.hibpApiKey.existingSecret.key`              | The key within an existing Secret which contains the key                                                          | `""`                       |
-| `vaultwarden.jobScheduler.pollIntervalMS`                | The poll interval for the job schedular in milliseconds                                                           | `30000`                    |
-| `vaultwarden.jobScheduler.sendPurgeSchedule`             | Cron schedule to purge outdated Bitwarden Sends                                                                   | `'0 5 * * * *'`            |
-| `vaultwarden.jobScheduler.trashPurgeSchedule`            | Cron schedule to purge trashed items                                                                              | `'0 5 0 * * *'`            |
-| `vaultwarden.jobScheduler.incomplete2FASchedule`         | Cron schedule to check for incomplete 2FA logins                                                                  | `'0 5 0 * * *'`            |
-| `vaultwarden.jobScheduler.emergencyNotificationReminder` | Cron schedule for expiration reminders                                                                            | `'0 3 * * * *'`            |
-| `vaultwarden.jobScheduler.emergencyRequestTimeout`       | Cron schedule for emergency access requests                                                                       | `'0 7 * * * *'`            |
-| `vaultwarden.jobScheduler.eventCleanup`                  | Cron schedule for event cleanups                                                                                  | `'0 10 0 * * *'`           |
-| `vaultwarden.jobScheduler.trashAutoDeleteDays`           | Number of days to wait before auto-deleting a trashed item.                                                       | `""`                       |
-| `vaultwarden.logs.level`                                 | The configured logging level                                                                                      | `info`                     |
-| `vaultwarden.logs.extended`                              | Configure extended logging                                                                                        | `true`                     |
-| `vaultwarden.logs.timestampFormat`                       | Timestamp format used in extended logging.                                                                        | `"%Y-%m-%d %H:%M:%S.%3f"`  |
-| `vaultwarden.logs.file`                                  | Logging to a file                                                                                                 | `/var/log/vaultwarden.log` |
-| `vaultwarden.logs.useSyslog`                             | Logging to Syslog                                                                                                 | `false`                    |
-| `vaultwarden.templates.folder`                           | Templates data folder, by default embedded templates are used                                                     | `""`                       |
-| `vaultwarden.templates.reload`                           | Automatically reload the templates for every request                                                              | `false`                    |
-| `vaultwarden.icons.service`                              | Which service to use for fetching icons                                                                           | `internal`                 |
-| `vaultwarden.icons.redirectCode`                         | The HTTP code to use for redirects to external services                                                           | `302`                      |
-| `vaultwarden.icons.disableDownloading`                   | Disable icon downloading                                                                                          | `false`                    |
-| `vaultwarden.icons.downloadTimeout`                      | Icon download timeout                                                                                             | `10`                       |
-| `vaultwarden.icons.blacklistRegex`                       | Icon blacklist regular expression                                                                                 | `""`                       |
-| `vaultwarden.icons.blacklistNonGlobalIPs`                | Any IP which is not defined as a global IP will be blacklisted.                                                   | `true`                     |
-| `vaultwarden.icons.cache.ttl`                            | Cache time-to-live for successfully obtained icons, in seconds                                                    | `259200`                   |
-| `vaultwarden.icons.cache.negttl`                         | Cache time-to-live for icons which weren't available, in seconds                                                  | `259200`                   |
-| `vaultwarden.rocket.address`                             | The address Rocket should bind to                                                                                 | `"0.0.0.0"`                |
-| `vaultwarden.rocket.port`                                | The port rocket should bind to                                                                                    | `80`                       |
-| `vaultwarden.rocket.workers`                             | The amount of rocket workers to create                                                                            | `10`                       |
-| `vaultwarden.rocket.tls`                                 | Rocket TLS configuration e.g.: "{certs="/path/to/certs.pem",key="/path/to/key.pem"}"                              | `""`                       |
-| `vaultwarden.experimental.featureFlags`                  | A list of feature flags to enable                                                                                 | `[]`                       |
+| Name                                                     | Description                                                                                                                                       | Value                      |
+| -------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------- |
+| `vaultwarden.domain`                                     | The domain of the Vaultwarden installation                                                                                                        | `""`                       |
+| `vaultwarden.web.enabled`                                | Whether or not to enable the Vaultwarden Web UI - enabled by default                                                                              | `true`                     |
+| `vaultwarden.web.folder`                                 | A custom folder from which to load assets for the Web UI - defaults to 'web-vault/'                                                               | `""`                       |
+| `vaultwarden.allowSends`                                 | Controls whether users are allowed to create Bitwarden Sends. Applies globally to all users.                                                      | `true`                     |
+| `vaultwarden.allowEmergencyAccess`                       | Controls whether users can enable emergency access to their accounts. Applies globally to all users.                                              | `true`                     |
+| `vaultwarden.allowEmailChange`                           | Controls whether users can change their email. Applies globally to all users.                                                                     | `true`                     |
+| `vaultwarden.enableOrgEvents`                            | Controls whether event logging is enabled for organizations. Applies to organizations.                                                            | `false`                    |
+| `vaultwarden.retainEventsDays`                           | Number of days to retain events stored in the database.                                                                                           | `""`                       |
+| `vaultwarden.ipHeader`                                   | Client IP header; list headers use the rightmost untrusted address. Set to "none" to use the remote IP                                            | `X-Forwarded-For`          |
+| `vaultwarden.ipHeaderTrustedProxies`                     | Trusted proxies for the client IP header: "local", "all", or comma-separated IPs/CIDRs; include every proxy in the chain                          | `local`                    |
+| `vaultwarden.disable2FARemember`                         | Disable 2FA remembrance.                                                                                                                          | `false`                    |
+| `vaultwarden.orgCreationUsers`                           | Controls which users can create new orgs.                                                                                                         | `""`                       |
+| `vaultwarden.enableOrgGroups`                            | Controls whether group support is enabled for organizations                                                                                       | `false`                    |
+| `vaultwarden.allowedIframeAncestors`                     | Allowed iframe ancestors (Know the risks!)                                                                                                        | `""`                       |
+| `vaultwarden.adminToken.value`                           | The value for the Vaultwarden admin token                                                                                                         | `""`                       |
+| `vaultwarden.adminToken.disable`                         | Disable token authentication for the admin panel                                                                                                  | `false`                    |
+| `vaultwarden.adminToken.existingSecret.name`             | The name of an existing Secret containing the admin token                                                                                         | `""`                       |
+| `vaultwarden.adminToken.existingSecret.key`              | The key name within the previously named existingSecret                                                                                           | `""`                       |
+| `vaultwarden.data.rootPath`                              | The data folder is used for all files by default                                                                                                  | `/data`                    |
+| `vaultwarden.data.paths.rsaKey`                          | The file path for the RSA key, 'data/rsa_key' by default                                                                                          | `""`                       |
+| `vaultwarden.data.paths.iconCache`                       | The path for icon cache, 'data/icon_cache' by default                                                                                             | `""`                       |
+| `vaultwarden.data.paths.attachments`                     | The mail attachments path, 'data/attachments' by default                                                                                          | `""`                       |
+| `vaultwarden.data.paths.sends`                           | The mail sends path, 'data/sends' by default                                                                                                      | `""`                       |
+| `vaultwarden.data.paths.tmp`                             | The temporary data path, 'data/tmp' by default                                                                                                    | `""`                       |
+| `vaultwarden.data.pvc.size`                              | The size given to PVCs created from the above data                                                                                                | `5Gi`                      |
+| `vaultwarden.data.pvc.storageClass`                      | The storageClass given to PVCs created from the above data                                                                                        | `standard`                 |
+| `vaultwarden.data.pvc.reclaimPolicy`                     | The resourcePolicy given to PVCs created from the above data                                                                                      | `Retain`                   |
+| `vaultwarden.data.pvc.existingClaim`                     | Provide the name to an existing PVC                                                                                                               | `""`                       |
+| `vaultwarden.email.attemptsLimit`                        | Maximum attempts before an email token is reset requiring a new email                                                                             | `3`                        |
+| `vaultwarden.email.tokenExpirationTime`                  | Token expiration time                                                                                                                             | `600`                      |
+| `vaultwarden.email.tokenSize`                            | Email token size                                                                                                                                  | `6`                        |
+| `vaultwarden.email.smtp.host`                            | Hostname of the Mail server                                                                                                                       | `""`                       |
+| `vaultwarden.email.smtp.from`                            | The from-address for emails sent by Vaultwarden                                                                                                   | `""`                       |
+| `vaultwarden.email.smtp.fromName`                        | The from-name for emails sent by Vaultwarden                                                                                                      | `Vaultwarden`              |
+| `vaultwarden.email.smtp.security`                        | Either 'starttls', 'force_tls' or 'off'                                                                                                           | `starttls`                 |
+| `vaultwarden.email.smtp.port`                            | SMTP port used                                                                                                                                    | `587`                      |
+| `vaultwarden.email.smtp.username`                        | SMTP user                                                                                                                                         | `""`                       |
+| `vaultwarden.email.smtp.password`                        | SMTP password                                                                                                                                     | `""`                       |
+| `vaultwarden.email.smtp.auth`                            | Defaults for SSL is "Plain" and "Login" and nothing for Non-SSL connections.                                                                      | `Plain`                    |
+| `vaultwarden.email.smtp.existingSecret.name`             | The name of an existing BasicAuth secret                                                                                                          | `""`                       |
+| `vaultwarden.email.smtp.timeout`                         | General SMTP settings                                                                                                                             | `15`                       |
+| `vaultwarden.email.smtp.sendmail.enabled`                | Whether or not to use sendmail for sending emails                                                                                                 | `false`                    |
+| `vaultwarden.email.smtp.sendmail.path`                   | The path to which sendmail binary to use.                                                                                                         | `""`                       |
+| `vaultwarden.email.smtp.helloName`                       | Server name sent during the SMTP HELLO                                                                                                            | `""`                       |
+| `vaultwarden.email.smtp.embedImages`                     | Embed images as email attachments                                                                                                                 | `false`                    |
+| `vaultwarden.email.smtp.acceptInvalidHostnames`          | Accept Invalid Hostnames                                                                                                                          | `false`                    |
+| `vaultwarden.email.smtp.acceptInvalidCertificates`       | Accept Invalid Certificates                                                                                                                       | `false`                    |
+| `vaultwarden.email.smtp.requireDeviceEmail`              | Require new device emails.                                                                                                                        | `false`                    |
+| `vaultwarden.email.smtp.debug`                           | Enable debug mode                                                                                                                                 | `false`                    |
+| `vaultwarden.email.twoFactor.enforceInviteVerification`  | Setup email 2FA regardless of any organization policy                                                                                             | `false`                    |
+| `vaultwarden.email.twoFactor.autoFallback`               | Automatically setup email 2FA as fallback provider when needed                                                                                    | `false`                    |
+| `vaultwarden.websocket.enabled`                          | Whether to enable Websocket push notifications                                                                                                    | `true`                     |
+| `vaultwarden.websocket.port`                             | Deprecated and no longer used - WebSocket traffic is served on the main port as of Vaultwarden 1.31.0                                             | `""`                       |
+| `vaultwarden.sso.enabled`                                | Whether users can log in using an OpenID Connect identity provider                                                                                | `false`                    |
+| `vaultwarden.sso.only`                                   | Prevent users from logging in directly without going through SSO                                                                                  | `false`                    |
+| `vaultwarden.sso.signupsMatchEmail`                      | On SSO signup, associate with an existing user if the email matches                                                                               | `true`                     |
+| `vaultwarden.sso.signupsAllowed`                         | Allow SSO to create accounts; signup.domainWhitelist overrides this setting when configured                                                       | `true`                     |
+| `vaultwarden.sso.allowUnknownEmailVerification`          | Allow unknown email verification status - combined with signupsMatchEmail this can allow account takeover, only enable if you understand the risk | `false`                    |
+| `vaultwarden.sso.authority`                              | Base URL of the OIDC server (auto-discovery is used) - must not include `/.well-known/openid-configuration` or a trailing slash                   | `""`                       |
+| `vaultwarden.sso.scopes`                                 | Additional authorization request scopes (`openid` is always implicit) - defaults to "email profile" if unset                                      | `""`                       |
+| `vaultwarden.sso.authorizeExtraParams`                   | Additional authorization URL parameters, e.g. to obtain a refresh_token with Google Auth                                                          | `""`                       |
+| `vaultwarden.sso.pkce`                                   | Use PKCE for the Auth Code flow                                                                                                                   | `true`                     |
+| `vaultwarden.sso.audienceTrusted`                        | Regex for additional trusted ID token audiences - by default only the client ID is trusted                                                        | `""`                       |
+| `vaultwarden.sso.clientId`                               | The OIDC client ID - ignored if `existingSecret.name` is set                                                                                      | `""`                       |
+| `vaultwarden.sso.clientSecret`                           | The OIDC client secret - ignored if `existingSecret.name` is set                                                                                  | `""`                       |
+| `vaultwarden.sso.existingSecret.name`                    | The name of an existing Secret containing `clientId` and `clientSecret` keys                                                                      | `""`                       |
+| `vaultwarden.sso.masterPasswordPolicy`                   | Optional master password policy JSON, e.g. '{"enforceOnLogin":false,"minComplexity":3,"minLength":12}'                                            | `""`                       |
+| `vaultwarden.sso.authOnlyNotSession`                     | Use SSO only for authentication, not for the session lifecycle                                                                                    | `false`                    |
+| `vaultwarden.database.type`                              | Choose the database type. Can be 'sqlite' or (external) 'mysql'/'postgresql'                                                                      | `"sqlite"`                 |
+| `vaultwarden.database.user`                              | Provide the username to the (external) Vaultwarden database - ignored if the database type is 'sqlite'                                            | `""`                       |
+| `vaultwarden.database.password`                          | Provide the password to the (external) Vaultwarden database - ignored if the database type is 'sqlite'                                            | `""`                       |
+| `vaultwarden.database.host`                              | Provide the host to the (external) Vaultwarden database - ignored if the database type is 'sqlite'                                                | `""`                       |
+| `vaultwarden.database.port`                              | Provide the port to the (external) Vaultwarden database - ignored if the database type is 'sqlite'                                                | `""`                       |
+| `vaultwarden.database.name`                              | Provide the name to the (external) Vaultwarden database - ignored if the database type is 'sqlite'                                                | `""`                       |
+| `vaultwarden.database.uri`                               | Manually provide the entire URI to the (external) Vaultwarden database - ignored if the database type is 'sqlite'                                 | `""`                       |
+| `vaultwarden.database.existingSecret.name`               | The name of an existing secret                                                                                                                    | `""`                       |
+| `vaultwarden.database.existingSecret.key`                | The key within the existing secret                                                                                                                | `""`                       |
+| `vaultwarden.database.enableWAL`                         | Enable write-ahead logging                                                                                                                        | `false`                    |
+| `vaultwarden.database.maxConnections`                    | Maximum database connections                                                                                                                      | `10`                       |
+| `vaultwarden.database.timeout`                           | Database timeout                                                                                                                                  | `30`                       |
+| `vaultwarden.database.connectionRetries`                 | Database connection retries                                                                                                                       | `15`                       |
+| `vaultwarden.database.mysqlDisablePeerVerification`      | Disable MariaDB TLS peer verification for Alpine connections to MySQL/MariaDB without native TLS; only applies to mysql                           | `false`                    |
+| `vaultwarden.limits.logins.ratelimitSeconds`             | Number of seconds between login requests                                                                                                          | `60`                       |
+| `vaultwarden.limits.logins.ratelimitMaxBurst`            | Allow bursts of requests up to this amount                                                                                                        | `10`                       |
+| `vaultwarden.limits.logins.adminRatelimitSeconds`        | Number of seconds between admin login requests                                                                                                    | `300`                      |
+| `vaultwarden.limits.logins.adminRatelimitMaxBurst`       | Allow bursts of admin requests up to this amount                                                                                                  | `300`                      |
+| `vaultwarden.limits.logins.adminSessionLifetime`         | The lifetime of an admin session                                                                                                                  | `20`                       |
+| `vaultwarden.limits.attachments.orgLimit`                | Per-organization attachment storage limit (KB)                                                                                                    | `""`                       |
+| `vaultwarden.limits.attachments.userLimit`               | Per-user attachment storage limit (KB)                                                                                                            | `""`                       |
+| `vaultwarden.limits.send.userLimit`                      | Per-user send storage limit (KB)                                                                                                                  | `""`                       |
+| `vaultwarden.passwords.iterations`                       | Number of password hash iterations                                                                                                                | `350000`                   |
+| `vaultwarden.passwords.hintsAllowed`                     | Allow sending of password hints                                                                                                                   | `false`                    |
+| `vaultwarden.passwords.showHint`                         | Show hints directly on login page - disabled by default                                                                                           | `false`                    |
+| `vaultwarden.signup.allowed`                             | Whether or not new users can register                                                                                                             | `true`                     |
+| `vaultwarden.signup.verify`                              | Whether email verification is need to sign up                                                                                                     | `true`                     |
+| `vaultwarden.signup.verifyResendTime`                    | How many seconds to wait to resend a verification email                                                                                           | `3600`                     |
+| `vaultwarden.signup.verifyResendLimit`                   | How many verificatione mails will be sent in total                                                                                                | `6`                        |
+| `vaultwarden.signup.domainWhitelist`                     | A comma-separated list of domains which can always register                                                                                       | `""`                       |
+| `vaultwarden.auth.authenticatorDisableTimeDrift`         | Allow 2FA time drift                                                                                                                              | `false`                    |
+| `vaultwarden.auth.incomplete2FATimeLimit`                | Minutes to wait before a 2FA login is considered incomplete                                                                                       | `3`                        |
+| `vaultwarden.auth.yubikey.enable`                        | Whether to enable authentication via YubiKeys                                                                                                     | `false`                    |
+| `vaultwarden.auth.yubikey.clientId`                      | Yubikey client ID                                                                                                                                 | `""`                       |
+| `vaultwarden.auth.yubikey.clientSecret`                  | Yubikey client Secret                                                                                                                             | `""`                       |
+| `vaultwarden.auth.yubikey.server`                        | Yubikey server                                                                                                                                    | `""`                       |
+| `vaultwarden.auth.duo.enable`                            | Whether to enable authentication via Duo                                                                                                          | `false`                    |
+| `vaultwarden.auth.duo.integrationKey`                    | Duo integration key                                                                                                                               | `""`                       |
+| `vaultwarden.auth.duo.secretKey`                         | Duo secret key                                                                                                                                    | `""`                       |
+| `vaultwarden.auth.duo.host`                              | Duo host                                                                                                                                          | `""`                       |
+| `vaultwarden.invitations.allowed`                        | Invitations org admins to invite users, even when signups are disabled                                                                            | `true`                     |
+| `vaultwarden.invitations.orgName`                        | Generic organization name for Emails                                                                                                              | `Vaultwarden`              |
+| `vaultwarden.invitations.expirationHours`                | Number of hours which an email invitation lasts                                                                                                   | `120`                      |
+| `vaultwarden.pushNotifications.enabled`                  | Whether to enable push notifications                                                                                                              | `false`                    |
+| `vaultwarden.pushNotifications.installationId`           | Installation ID from 'https://bitwarden.com/host'                                                                                                 | `""`                       |
+| `vaultwarden.pushNotifications.installationKey`          | Installation Key from 'https://bitwarden.com/host'                                                                                                | `""`                       |
+| `vaultwarden.pushNotifications.relayUri`                 | Set a custom relay URI for push notifications                                                                                                     | `""`                       |
+| `vaultwarden.pushNotifications.identityUri`              | Set a custom identity URI for push notifications                                                                                                  | `""`                       |
+| `vaultwarden.hibpApiKey.value`                           | The HIBP API key-value                                                                                                                            | `""`                       |
+| `vaultwarden.hibpApiKey.existingSecret.name`             | The name of an existing Secret containing the HIBP API key                                                                                        | `""`                       |
+| `vaultwarden.hibpApiKey.existingSecret.key`              | The key within an existing Secret which contains the key                                                                                          | `""`                       |
+| `vaultwarden.jobScheduler.pollIntervalMS`                | The poll interval for the job schedular in milliseconds                                                                                           | `30000`                    |
+| `vaultwarden.jobScheduler.sendPurgeSchedule`             | Cron schedule to purge outdated Bitwarden Sends                                                                                                   | `'0 5 * * * *'`            |
+| `vaultwarden.jobScheduler.trashPurgeSchedule`            | Cron schedule to purge trashed items                                                                                                              | `'0 5 0 * * *'`            |
+| `vaultwarden.jobScheduler.incomplete2FASchedule`         | Cron schedule to check for incomplete 2FA logins                                                                                                  | `'0 5 0 * * *'`            |
+| `vaultwarden.jobScheduler.emergencyNotificationReminder` | Cron schedule for expiration reminders                                                                                                            | `'0 3 * * * *'`            |
+| `vaultwarden.jobScheduler.emergencyRequestTimeout`       | Cron schedule for emergency access requests                                                                                                       | `'0 7 * * * *'`            |
+| `vaultwarden.jobScheduler.eventCleanup`                  | Cron schedule for event cleanups                                                                                                                  | `'0 10 0 * * *'`           |
+| `vaultwarden.jobScheduler.trashAutoDeleteDays`           | Number of days to wait before auto-deleting a trashed item.                                                                                       | `""`                       |
+| `vaultwarden.logs.level`                                 | The configured logging level                                                                                                                      | `info`                     |
+| `vaultwarden.logs.extended`                              | Configure extended logging                                                                                                                        | `true`                     |
+| `vaultwarden.logs.timestampFormat`                       | Timestamp format used in extended logging.                                                                                                        | `"%Y-%m-%d %H:%M:%S.%3f"`  |
+| `vaultwarden.logs.file`                                  | Logging to a file                                                                                                                                 | `/var/log/vaultwarden.log` |
+| `vaultwarden.logs.useSyslog`                             | Logging to Syslog                                                                                                                                 | `false`                    |
+| `vaultwarden.templates.folder`                           | Templates data folder, by default embedded templates are used                                                                                     | `""`                       |
+| `vaultwarden.templates.reload`                           | Automatically reload the templates for every request                                                                                              | `false`                    |
+| `vaultwarden.icons.service`                              | Which service to use for fetching icons                                                                                                           | `internal`                 |
+| `vaultwarden.icons.redirectCode`                         | The HTTP code to use for redirects to external services                                                                                           | `302`                      |
+| `vaultwarden.icons.disableDownloading`                   | Disable icon downloading                                                                                                                          | `false`                    |
+| `vaultwarden.icons.downloadTimeout`                      | Icon download timeout                                                                                                                             | `10`                       |
+| `vaultwarden.icons.blacklistRegex`                       | Icon blacklist regular expression                                                                                                                 | `""`                       |
+| `vaultwarden.icons.blacklistNonGlobalIPs`                | Any IP which is not defined as a global IP will be blacklisted.                                                                                   | `true`                     |
+| `vaultwarden.icons.cache.ttl`                            | Cache time-to-live for successfully obtained icons, in seconds                                                                                    | `259200`                   |
+| `vaultwarden.icons.cache.negttl`                         | Cache time-to-live for icons which weren't available, in seconds                                                                                  | `259200`                   |
+| `vaultwarden.rocket.address`                             | The address Rocket should bind to                                                                                                                 | `"0.0.0.0"`                |
+| `vaultwarden.rocket.port`                                | The port rocket should bind to                                                                                                                    | `80`                       |
+| `vaultwarden.rocket.workers`                             | The amount of rocket workers to create                                                                                                            | `10`                       |
+| `vaultwarden.rocket.tls`                                 | Rocket TLS configuration e.g.: "{certs="/path/to/certs.pem",key="/path/to/key.pem"}"                                                              | `""`                       |
+| `vaultwarden.experimental.featureFlags`                  | Client feature flags to enable; unsupported flags warn on startup and prevent saving admin settings                                               | `[]`                       |
 
 ### ConfigMap parameters
 
@@ -330,3 +409,8 @@ configurable via the Image Parameters.
 | -------------------- | ------------------------------------------------- | ----- |
 | `podSecurityContext` | Security context settings for the Vaultwarden pod | `{}`  |
 | `securityContext`    | General security context settings for             | `{}`  |
+
+<!-- Upgrade references -->
+
+[release_1374]: https://github.com/dani-garcia/vaultwarden/releases/tag/1.37.4
+[config_1374]: https://github.com/dani-garcia/vaultwarden/blob/1.37.4/src/config.rs

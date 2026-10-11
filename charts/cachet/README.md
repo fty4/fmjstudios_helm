@@ -1,4 +1,14 @@
-# FMJ Studios - Cachet Helm Chart <img src="https://raw.githubusercontent.com/cachethq/art/1a545d3ae52df6ee4d22677acfcc6ab4a90ef231/logo-mark/cachet-logomark-green.png" alt="Cachet Logo" width="175" height="175" align="right" loading="lazy">
+# Ad Noctem Collective - Cachet Helm Chart <img src="https://raw.githubusercontent.com/cachethq/art/1a545d3ae52df6ee4d22677acfcc6ab4a90ef231/logo-mark/cachet-logomark-green.png" alt="Cachet Logo" width="175" height="175" align="right" loading="lazy">
+
+> [!IMPORTANT]
+> This Helm chart relies on the open-source _Bitnami_ Helm chart `postgresql`. Beginning on August 28th, 2025, _Bitnami_
+> (_VMware_/_Broadcom_) has changed their public offering and will require a commercial license for the use of their charts and images
+> (_Bitnami Secure Images_/_BSI_). The only images available to the public as of now are a small set of hardened images which are only
+> available at the 'latest' tag and meant for testing and development purposes. As such, the PostgreSQL subchart included in this Helm
+> chart is provided for convenience, but users are encouraged to use their own PostgreSQL instance, another PostgreSQL Helm chart or
+> (preferably) an Operator-managed PostgreSQL instance like CloudnativePG, if they do not wish to obtain a Bitnami license.
+>
+> _ref: [`bitnami/charts` - Issue 35164](https://github.com/bitnami/charts/issues/35164)_
 
 Cachet is an open-source status page system designed to help you keep track of your system status and share it with your
 user base. It is built to be responsive and works seamlessly across different devices. It is perfect for businesses and
@@ -17,14 +27,14 @@ on [Docker Hub](https://hub.docker.com/r/cachethq/docker/).
 ### Helm Repository Installation
 
 ```shell
-helm repo add fmjstudios https://fmjstudios.github.io/helm
-helm install cachet fmjstudios/cachet --version X.Y.Z
+helm repo add adnoctem https://adnoctem.github.io/charts
+helm install cachet adnoctem/cachet --version X.Y.Z
 ```
 
 ### OCI Installation
 
 ```shell
-helm install oci://ghcr.io/fmjstudios/helm/cachet:X.Y.Z
+helm install oci://ghcr.io/adnoctem/charts/cachet:X.Y.Z
 ```
 
 ## Introduction
@@ -42,6 +52,30 @@ all [Cachet environment variables](https://docs.cachethq.io/installation/docker.
 via the `cachet` key in Helm's _values_ and makes use of the official Docker Hub container image, although this is
 configurable via the Image
 Parameters.
+
+> [!NOTE]
+> Cachet ships under a custom license (see
+> [the upstream LICENSE](https://github.com/cachethq/cachet/blob/2.4/LICENSE.md)), not a common OSS license like MIT
+> or Apache-2.0 - review it before redistributing this chart or the underlying image as a standalone product.
+>
+> Cachet's own GitHub releases go up to `v2.4.1`, but
+> [no Docker image has been published for `2.4.x`](https://github.com/CachetHQ/Docker/issues/267) - the last image
+> on Docker Hub is `2.3.18`. **This chart intentionally stays pinned to `2.3.15`** rather than that last image: every
+> image from `2.3.16` through `2.3.18` fails on a fresh install with `Command "cachet:install" is not defined`
+> ([cachethq/Docker#379](https://github.com/cachethq/Docker/issues/379)) - the packaging repo's entrypoint script
+> was updated to call an artisan command that doesn't exist in the application code actually shipped in those same
+> image tags. There's no known workaround, and the issue is still open upstream. Upstream is also rebuilding Cachet
+> as a new `3.x` release on Laravel/Tailwind/Filament (currently the repository's default branch), but it has no
+> tagged releases or images yet and isn't production-ready - worth knowing about, not something to chase in this
+> chart today.
+
+## Upgrading
+
+### To 0.3.3 (no appVersion change)
+
+- Corrected the `artifacthub.io/license` annotation: Cachet ships under its own custom license, not MIT as
+  previously listed.
+- No `appVersion` change - see the note above on why `2.3.16`-`2.3.18` aren't usable.
 
 ## Parameters
 
@@ -229,15 +263,22 @@ Parameters.
 
 ### Bitnami&reg; PostgreSQL parameters
 
-| Name                                 | Description                                                                                            | Value      |
-| ------------------------------------ | ------------------------------------------------------------------------------------------------------ | ---------- |
-| `postgresql.enabled`                 | Enable or disable the PostgreSQL subchart                                                              | `true`     |
-| `postgresql.auth.enablePostgresUser` | Assign a password to the "postgres" admin user. Otherwise, remote access will be blocked for this user | `true`     |
-| `postgresql.auth.postgresPassword`   | Password for the "postgres" admin user. Ignored if `auth.existingSecret` is provided                   | `postgres` |
-| `postgresql.auth.username`           | Name for a custom user to create                                                                       | `cachet`   |
-| `postgresql.auth.password`           | Password for the custom user to create. Ignored if `auth.existingSecret` is provided                   | `cachet`   |
-| `postgresql.auth.database`           | Name for a custom database to create                                                                   | `cachet`   |
-| `postgresql.auth.usePasswordFiles`   | Mount credentials as a files instead of using an environment variable                                  | `false`    |
+### PostgreSQL Global parameters
+
+| Name                                             | Description                                                                                                                    | Value                        |
+| ------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------ | ---------------------------- |
+| `postgresql.global.imageRegistry`                | Global Docker image registry. Force 'docker.io' - required due to BSI.                                                         | `docker.io`                  |
+| `postgresql.global.security.allowInsecureImages` | Allows skipping image verification. 'bitnamisecure' images meet the charts' security requirements. Others will require 'true'. | `false`                      |
+| `postgresql.image.registry`                      | PostgreSQL image registry                                                                                                      | `REGISTRY_NAME`              |
+| `postgresql.image.repository`                    | PostgreSQL image repository. 'bitnamisecure' is recommended.                                                                   | `REPOSITORY_NAME/postgresql` |
+| `postgresql.image.tag`                           | PostgreSQL image tag. As of August 28th, 2025, only 'latest' is available publicly due to BSI.                                 | `latest`                     |
+| `postgresql.enabled`                             | Enable or disable the PostgreSQL subchart                                                                                      | `true`                       |
+| `postgresql.auth.enablePostgresUser`             | Assign a password to the "postgres" admin user. Otherwise, remote access will be blocked for this user                         | `true`                       |
+| `postgresql.auth.postgresPassword`               | Password for the "postgres" admin user. Ignored if `auth.existingSecret` is provided                                           | `postgres`                   |
+| `postgresql.auth.username`                       | Name for a custom user to create                                                                                               | `cachet`                     |
+| `postgresql.auth.password`                       | Password for the custom user to create. Ignored if `auth.existingSecret` is provided                                           | `cachet`                     |
+| `postgresql.auth.database`                       | Name for a custom database to create                                                                                           | `cachet`                     |
+| `postgresql.auth.usePasswordFiles`               | Mount credentials as a files instead of using an environment variable                                                          | `false`                      |
 
 ### PostgreSQL Primary parameters
 
@@ -252,8 +293,15 @@ Parameters.
 
 ### Bitnami&reg; Redis parameters
 
-| Name                  | Description                                                            | Value        |
-| --------------------- | ---------------------------------------------------------------------- | ------------ |
-| `redis.enabled`       | Enable or disable the Redis&reg; subchart                              | `false`      |
-| `redis.architecture`  | Redis&reg; architecture. Allowed values: `standalone` or `replication` | `standalone` |
-| `redis.auth.password` | Redis&reg; password                                                    | `""`         |
+### Redis Global parameters
+
+| Name                                        | Description                                                                                                                    | Value                   |
+| ------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------ | ----------------------- |
+| `redis.global.imageRegistry`                | Global Docker image registry. Force 'docker.io' - required due to BSI.                                                         | `docker.io`             |
+| `redis.global.security.allowInsecureImages` | Allows skipping image verification. 'bitnamisecure' images meet the charts' security requirements. Others will require 'true'. | `false`                 |
+| `redis.image.registry`                      | Redis image registry                                                                                                           | `REGISTRY_NAME`         |
+| `redis.image.repository`                    | Redis image repository. 'bitnamisecure' is recommended.                                                                        | `REPOSITORY_NAME/redis` |
+| `redis.image.tag`                           | Redis image tag. As of August 28th, 2025, only 'latest' is available publicly due to BSI.                                      | `latest`                |
+| `redis.enabled`                             | Enable or disable the Redis&reg; subchart                                                                                      | `false`                 |
+| `redis.architecture`                        | Redis&reg; architecture. Allowed values: `standalone` or `replication`                                                         | `standalone`            |
+| `redis.auth.password`                       | Redis&reg; password                                                                                                            | `""`                    |

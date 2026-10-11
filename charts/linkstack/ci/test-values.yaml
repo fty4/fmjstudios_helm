@@ -1,6 +1,6 @@
 linkstack:
-  serverAdmin: info@fmj.studio
-  serverName: linkstack.helm.private
+  serverAdmin: info@adnoctem.co
+  serverName: linkstack.charts.internal
   logLevel: warn
   timeZone: Europe/Berlin
   phpMemoryLimit: 512M
@@ -16,7 +16,7 @@ ingress:
   tls:
     - secretName: linkstack-ingress-tls
       hosts:
-        - linkstack.helm.private
+        - linkstack.charts.internal
 
 livenessProbe:
   enabled: true

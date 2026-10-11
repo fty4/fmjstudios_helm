@@ -1,4 +1,4 @@
-# FMJ Studios - Linkstack Helm Chart <img src="https://raw.githubusercontent.com/LinkStackOrg/branding/c22886d7585246836d5e4e597484b92b51c76f0c/logo/png/logo.png" alt="Linkstack Logo" width="175" height="175" align="right" loading="lazy"/>
+# Ad Noctem Collective - Linkstack Helm Chart <img src="https://raw.githubusercontent.com/LinkStackOrg/branding/c22886d7585246836d5e4e597484b92b51c76f0c/logo/png/logo.png" alt="Linkstack Logo" width="175" height="175" align="right" loading="lazy"/>
 
 LinkStack provides you with a configurable self-hosted site similar to [Linktree](https://linktr.ee/). Many social
 media platforms only allow you to add one link, with this you can simply link to your LinkStack page and have all the
@@ -16,14 +16,14 @@ single Docker image available on [Docker Hub](https://hub.docker.com/r/linkstack
 ### Helm Repository Installation
 
 ```shell
-helm repo add fmjstudios https://fmjstudios.github.io/helm
-helm install linkstack fmjstudios/linkstack --version X.Y.Z
+helm repo add adnoctem https://adnoctem.github.io/charts
+helm install linkstack adnoctem/linkstack --version X.Y.Z
 ```
 
 ### OCI Installation
 
 ```shell
-helm install oci://ghcr.io/fmjstudios/helm/linkstack:X.Y.Z
+helm install oci://ghcr.io/adnoctem/charts/linkstack:X.Y.Z
 ```
 
 ## Introduction
@@ -40,6 +40,26 @@ The chart supports the configuration of all [Linkstack environment variables](ht
 via the `linkstack` key in Helm's _values_ and makes use of the official Docker Hub container image, although this is
 configurable via the Image Parameters.
 
+> [!NOTE]
+> LinkStack does not publish semver-tagged images on Docker Hub, only `latest` - the chart pins `image.digest` to a
+> specific `latest` build so upgrades stay deliberate; bump `image.digest` yourself to move to a newer build.
+
+## Upgrading
+
+### To 0.4.0 (LinkStack 4.8.0 -> 4.8.6)
+
+- `appVersion` bumped from `4.8.0` to `4.8.6`, and `image.digest` updated to match. All intermediate releases were
+  security/dependency patches and UI additions (new social buttons, a modular blocks system) - no environment
+  variables or container behavior relevant to this chart changed.
+- Corrected the `artifacthub.io/license` annotation: LinkStack is licensed AGPL-3.0, not MIT as previously listed.
+- Fixed the data-seeding init container, which crashed (`chown: /data: Operation not permitted`) against the new
+  image build - the image now runs as `apache` by default instead of `root`, so the init container needs an
+  explicit `runAsUser: 0`/`runAsGroup: 0` to retain permission to `chown` the PVC on first install.
+- If your LinkStack instance was ever upgraded via its own in-app updater while running `4.8.0`-`4.8.3`, be aware
+  that a since-fixed bug in that updater could corrupt or delete the contents of the themes directory - see
+  [the 4.8.4 release notes](https://github.com/LinkStackOrg/LinkStack/releases/tag/v4.8.4) if that applies to your
+  deployment. This chart's own upgrade path (pulling a newer image) is unaffected.
+
 ## Parameters
 
 ### Image parameters
@@ -49,7 +69,7 @@ configurable via the Image Parameters.
 | `image.registry`    | The Docker registry to pull the image from                          | `docker.io`                                                               |
 | `image.repository`  | The registry repository to pull the image from                      | `linkstackorg/linkstack`                                                  |
 | `image.tag`         | The image tag to pull                                               | `latest`                                                                  |
-| `image.digest`      | The image digest to pull                                            | `sha256:abd691b4293b020a317de8794737671e0315159efcb868e8a4124d6f0611f7ae` |
+| `image.digest`      | The image digest to pull                                            | `sha256:1c8b05399ee459ac601bac3eede7fbe765d1b6b7be725663b57f3220610958bf` |
 | `image.pullPolicy`  | The Kubernetes image pull policy                                    | `IfNotPresent`                                                            |
 | `image.pullSecrets` | A list of secrets to use for pulling images from private registries | `[]`                                                                      |
 

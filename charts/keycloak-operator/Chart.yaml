@@ -1,11 +1,11 @@
-# Copyright FMJ Studios
+# Copyright Ad Noctem Collective
 # SPDX-License-Identifier: MIT
 
 apiVersion: v2
-appVersion: 26.0.6
+appVersion: 26.8.0
 kubeVersion: ">=1.26.0-0"
 name: keycloak-operator
-version: 0.1.2
+version: 0.4.0
 description: Keycloak is an open source software product to allow single sign-on with identity and access management
 home: https://github.com/keycloak/keycloak
 icon: https://raw.githubusercontent.com/keycloak/keycloak-misc/main/logo/logo.png
@@ -20,38 +20,40 @@ keywords:
   - federation
   - keycloak
 sources:
-  - "https://github.com/fmjstudios/helm"
+  - "https://github.com/adnoctem/charts"
 maintainers:
-  - name: fmjstudios
-    email: info@fmj.studio
-  - name: FMJdev
-    email: info@fmj.dev
+  - name: adnoctem
+    email: info@adnoctem.co
+  - name: MVProwess
+    email: info@mvprowess.com
 annotations:
   artifacthub.io/category: security
   artifacthub.io/license: MIT
   artifacthub.io/signKey: |
-    fingerprint: 654213659810F05D16A7EDECB6C4D653E669D643
-    url: https://keys.openpgp.org/vks/v1/by-fingerprint/654213659810F05D16A7EDECB6C4D653E669D643
+    fingerprint: 97DB36A8BD5E342076ED46D63E317D513290CC4B
+    url: https://keys.openpgp.org/vks/v1/by-fingerprint/97DB36A8BD5E342076ED46D63E317D513290CC4B
   artifacthub.io/prerelease: "false"
   artifacthub.io/images: |
     - name: keycloak-operator
-      image: quay.io/keycloak/keycloak-operator:26.0.6
+      image: quay.io/keycloak/keycloak-operator:26.8.0
   artifacthub.io/links: |
     - name: Source
-      url: https://github.com/fmjstudios/helm
+      url: https://github.com/adnoctem/charts
     - name: Support
-      url: https://github.com/fmjstudios/helm/issues
+      url: https://github.com/adnoctem/charts/issues
     - name: Keycloak GitHub Repository
       url: https://github.com/keycloak/keycloak
     - name: Keycloak Documentation
       url: https://www.keycloak.org/guides
-  org.opencontainers.image.vendor: "FMJ Studios"
+  org.opencontainers.image.vendor: "Ad Noctem Collective"
   org.opencontainers.image.licenses: "MIT"
   # ref: https://artifacthub.io/docs/topics/annotations/helm/
   artifacthub.io/changes: |
     - kind: changed
-      description: bump chart version to 0.1.2
+      description: upgrade Keycloak Operator and its managed Keycloak image to 26.8.0
     - kind: changed
-      description: bump operator version to 26.0.6
-    - kind: added
-      description: add CRDs at 26.0.6
+      description: refresh CRDs and document organization-link, OIDC Secret label and admin TLS migrations
+    - kind: changed
+      description: align operator image configuration, build annotations and termination grace period with upstream
+    - kind: fixed
+      description: refresh all four CRDs in the download script and stop on download failures

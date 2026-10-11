@@ -1,5 +1,12 @@
 vaultwarden:
-  domain: "vaultwarden.helm.private"
+  sso:
+    signupsAllowed: false
+  domain: "vaultwarden.charts.internal"
+  ipHeaderTrustedProxies: "127.0.0.1,::1,10.0.0.0/8,172.16.0.0/12,192.168.0.0/16,fc00::/7"
+  experimental:
+    featureFlags:
+      - ssh-agent-v2
+      - enable-basic-auth-response
   adminToken:
     value: "PretendThisIsAnAdminToken"
 
@@ -12,7 +19,7 @@ vaultwarden:
       username: ""
       password: ""
       auth: "Plain"
-      helloName: "vaultwarden.helm.private"
+      helloName: "vaultwarden.charts.internal"
       acceptInvalidHostnames: true
       acceptInvalidCertificates: true
 
@@ -23,7 +30,7 @@ vaultwarden:
   signup:
     allowed: true
     verify: false
-    domainWhitelist: "fmj.studio,helm.private"
+    domainWhitelist: "adnoctem.co,helm.internal"
 
   logs:
     level: debug
@@ -37,7 +44,7 @@ ingress:
   tls:
     - secretName: vaultwarden-ingress-tls
       hosts:
-        - "vaultwarden.helm.private"
+        - "vaultwarden.charts.internal"
 
 rbac:
   create: true

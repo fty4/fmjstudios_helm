@@ -45,6 +45,7 @@ data:
   EVENTS_DAYS_RETAIN: {{ .Values.vaultwarden.retainEventsDays | quote }}
   {{- end }}
   IP_HEADER: {{ .Values.vaultwarden.ipHeader | quote }}
+  IP_HEADER_TRUSTED_PROXIES: {{ .Values.vaultwarden.ipHeaderTrustedProxies | quote }}
   DISABLE_2FA_REMEMBER: {{ .Values.vaultwarden.disable2FARemember | quote }}
   {{- if .Values.vaultwarden.orgCreationUsers }}
   ORG_CREATION_USERS: {{ .Values.vaultwarden.orgCreationUsers | quote }}
@@ -59,6 +60,9 @@ data:
   DATABASE_MAX_CONNS: {{ .Values.vaultwarden.database.maxConnections | quote }}
   DATABASE_TIMEOUT: {{ .Values.vaultwarden.database.timeout | quote }}
   DB_CONNECTION_RETRIES: {{ .Values.vaultwarden.database.connectionRetries | quote }}
+  {{- end }}
+  {{- if and (eq .Values.vaultwarden.database.type "mysql") .Values.vaultwarden.database.mysqlDisablePeerVerification }}
+  MARIADB_TLS_DISABLE_PEER_VERIFICATION: "1"
   {{- end }}
   {{- if (eq .Values.vaultwarden.database.type "sqlite") }}
   DATABASE_CONN_INIT: {{ include "vaultwarden.db.conn_init" . | quote }}
@@ -103,7 +107,44 @@ data:
     Websocket configuration
   */}}
   {{- if .Values.vaultwarden.websocket.enabled }}
-  WEBSOCKET_ENABLED: {{ .Values.vaultwarden.websocket.enabled | quote }}
+  ENABLE_WEBSOCKET: {{ .Values.vaultwarden.websocket.enabled | quote }}
+  {{- end }}
+  {{- /*
+    SSO (OpenID Connect) configuration
+  */}}
+  {{- if .Values.vaultwarden.sso.enabled }}
+  SSO_ENABLED: {{ .Values.vaultwarden.sso.enabled | quote }}
+  {{- end }}
+  {{- if .Values.vaultwarden.sso.only }}
+  SSO_ONLY: {{ .Values.vaultwarden.sso.only | quote }}
+  {{- end }}
+  SSO_SIGNUPS_ALLOWED: {{ .Values.vaultwarden.sso.signupsAllowed | quote }}
+  {{- if not .Values.vaultwarden.sso.signupsMatchEmail }}
+  SSO_SIGNUPS_MATCH_EMAIL: {{ .Values.vaultwarden.sso.signupsMatchEmail | quote }}
+  {{- end }}
+  {{- if .Values.vaultwarden.sso.allowUnknownEmailVerification }}
+  SSO_ALLOW_UNKNOWN_EMAIL_VERIFICATION: {{ .Values.vaultwarden.sso.allowUnknownEmailVerification | quote }}
+  {{- end }}
+  {{- if .Values.vaultwarden.sso.authority }}
+  SSO_AUTHORITY: {{ .Values.vaultwarden.sso.authority | quote }}
+  {{- end }}
+  {{- if .Values.vaultwarden.sso.scopes }}
+  SSO_SCOPES: {{ .Values.vaultwarden.sso.scopes | quote }}
+  {{- end }}
+  {{- if .Values.vaultwarden.sso.authorizeExtraParams }}
+  SSO_AUTHORIZE_EXTRA_PARAMS: {{ .Values.vaultwarden.sso.authorizeExtraParams | quote }}
+  {{- end }}
+  {{- if not .Values.vaultwarden.sso.pkce }}
+  SSO_PKCE: {{ .Values.vaultwarden.sso.pkce | quote }}
+  {{- end }}
+  {{- if .Values.vaultwarden.sso.audienceTrusted }}
+  SSO_AUDIENCE_TRUSTED: {{ .Values.vaultwarden.sso.audienceTrusted | quote }}
+  {{- end }}
+  {{- if .Values.vaultwarden.sso.masterPasswordPolicy }}
+  SSO_MASTER_PASSWORD_POLICY: {{ .Values.vaultwarden.sso.masterPasswordPolicy | quote }}
+  {{- end }}
+  {{- if .Values.vaultwarden.sso.authOnlyNotSession }}
+  SSO_AUTH_ONLY_NOT_SESSION: {{ .Values.vaultwarden.sso.authOnlyNotSession | quote }}
   {{- end }}
   {{- /*
     Rate limits configuration

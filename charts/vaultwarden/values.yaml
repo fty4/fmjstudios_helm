@@ -1,5 +1,5 @@
-# Default Helm values for fmjstudios/vaultwarden.
-# Reference: https://github.com/fmjstudios/helm
+# Default Helm values for adnoctem/vaultwarden.
+# Reference: https://github.com/adnoctem/charts
 
 # This is a YAML-formatted file.
 # Declare variables to be passed into your templates.
@@ -19,7 +19,7 @@
 image:
   registry: docker.io
   repository: vaultwarden/server
-  tag: "1.30.5-alpine"
+  tag: "1.37.4-alpine"
   digest: ""
   ## Specify a imagePullPolicy
   ## Defaults to 'Always' if image tag is 'latest', else set to 'IfNotPresent'
@@ -95,10 +95,16 @@ vaultwarden:
   ##
   retainEventsDays: ""
 
-  ## @param vaultwarden.ipHeader [default: X-Forwarded-For] The Client IP Header, defaults to "X-Forwarded-For".
+  ## @param vaultwarden.ipHeader Client IP header; list headers use the rightmost untrusted address. Set to "none" to use the remote IP
   ## Set to the string "none" to disable any headers and just use the remote IP
   ##
   ipHeader: X-Forwarded-For
+
+  ## @param vaultwarden.ipHeaderTrustedProxies Trusted proxies for the client IP header: "local", "all", or comma-separated IPs/CIDRs; include every proxy in the chain
+  ## "local" trusts non-global addresses. Prefer explicit proxy addresses or CIDRs when possible.
+  ## "all" trusts headers from any source and should only be used behind a trusted proxy with direct access blocked.
+  ##
+  ipHeaderTrustedProxies: local
 
   ## @param vaultwarden.disable2FARemember [default: false] Disable 2FA remembrance.
   ## Enabling this would force the users to use a second factor to login every time.
@@ -311,14 +317,69 @@ vaultwarden:
       autoFallback: false
 
   ## Websocket configuration for push notifications
+  ## NOTE: as of Vaultwarden 1.31.0, WebSocket notifications are served on the main HTTP port - the separate
+  ##       port 3012 no longer exists
   ##
   websocket:
     ## @param vaultwarden.websocket.enabled [default: true] Whether to enable Websocket push notifications
     ##
     enabled: true
-    ## @param vaultwarden.websocket.port [default: 3012] The port websocket should bind to
+    ## @param vaultwarden.websocket.port [string] Deprecated and no longer used - WebSocket traffic is served on the main port as of Vaultwarden 1.31.0
     ##
-    port: 3012
+    port: ""
+
+  ## SSO (OpenID Connect) configuration, added upstream since this chart's previous target version
+  ## ref: https://github.com/dani-garcia/vaultwarden/wiki/Enabling-SSO-support-using-OpenId-Connect
+  ##
+  sso:
+    ## @param vaultwarden.sso.enabled [default: false] Whether users can log in using an OpenID Connect identity provider
+    ##
+    enabled: false
+    ## @param vaultwarden.sso.only [default: false] Prevent users from logging in directly without going through SSO
+    ##
+    only: false
+    ## @param vaultwarden.sso.signupsMatchEmail [default: true] On SSO signup, associate with an existing user if the email matches
+    ##
+    signupsMatchEmail: true
+    ## @param vaultwarden.sso.signupsAllowed [default: true] Allow SSO to create accounts; signup.domainWhitelist overrides this setting when configured
+    ##
+    signupsAllowed: true
+    ## @param vaultwarden.sso.allowUnknownEmailVerification [default: false] Allow unknown email verification status - combined with signupsMatchEmail this can allow account takeover, only enable if you understand the risk
+    ##
+    allowUnknownEmailVerification: false
+    ## @param vaultwarden.sso.authority [string] Base URL of the OIDC server (auto-discovery is used) - must not include `/.well-known/openid-configuration` or a trailing slash
+    ##
+    authority: ""
+    ## @param vaultwarden.sso.scopes [string] Additional authorization request scopes (`openid` is always implicit) - defaults to "email profile" if unset
+    ##
+    scopes: ""
+    ## @param vaultwarden.sso.authorizeExtraParams [string] Additional authorization URL parameters, e.g. to obtain a refresh_token with Google Auth
+    ##
+    authorizeExtraParams: ""
+    ## @param vaultwarden.sso.pkce [default: true] Use PKCE for the Auth Code flow
+    ##
+    pkce: true
+    ## @param vaultwarden.sso.audienceTrusted [string] Regex for additional trusted ID token audiences - by default only the client ID is trusted
+    ##
+    audienceTrusted: ""
+    ## @param vaultwarden.sso.clientId [string] The OIDC client ID - ignored if `existingSecret.name` is set
+    ##
+    clientId: ""
+    ## @param vaultwarden.sso.clientSecret [string] The OIDC client secret - ignored if `existingSecret.name` is set
+    ##
+    clientSecret: ""
+    ## An existing Secret containing `clientId` and `clientSecret` keys
+    ##
+    existingSecret:
+      ## @param vaultwarden.sso.existingSecret.name [string] The name of an existing Secret containing `clientId` and `clientSecret` keys
+      ##
+      name: ""
+    ## @param vaultwarden.sso.masterPasswordPolicy [string] Optional master password policy JSON, e.g. '{"enforceOnLogin":false,"minComplexity":3,"minLength":12}'
+    ##
+    masterPasswordPolicy: ""
+    ## @param vaultwarden.sso.authOnlyNotSession [default: false] Use SSO only for authentication, not for the session lifecycle
+    ##
+    authOnlyNotSession: false
 
   ## Database settings
   ##
@@ -391,6 +452,11 @@ vaultwarden:
     ## 0 to retry indefinitely
     ##
     connectionRetries: 15
+
+    ## @param vaultwarden.database.mysqlDisablePeerVerification Disable MariaDB TLS peer verification for Alpine connections to MySQL/MariaDB without native TLS; only applies to mysql
+    ## Leave disabled for databases with verified TLS. Enabling weakens TLS peer verification.
+    ##
+    mysqlDisablePeerVerification: false
 
   ## Rate Limits
   ##
@@ -774,13 +840,19 @@ vaultwarden:
   ## Experimental Vaultwarden settings
   ## ref:
   experimental:
-    ## @param vaultwarden.experimental.featureFlags [array] A list of feature flags to enable
+    ## @param vaultwarden.experimental.featureFlags [array] Client feature flags to enable; unsupported flags warn on startup and prevent saving admin settings
     ##
     ## The following flags are available:
-    ### - "autofill-overlay": Add an overlay menu to form fields for quick access to credentials.
-    ### - "autofill-v2": Use the new autofill implementation.
-    ### - "browser-fileless-import": Directly import credentials from other providers without a file.
-    ### - "fido2-vault-credentials": Enable the use of FIDO2 security keys as second factor.
+    ## See https://github.com/dani-garcia/vaultwarden/blob/1.37.4/src/config.rs (SUPPORTED_FEATURE_FLAGS).
+    ### - "pm-5594-safari-account-switching"
+    ### - "pm-32413-multi-client-password-management"
+    ### - "undetermined-cipher-scenario-logic"
+    ### - "enable-basic-auth-response"
+    ### - "ssh-agent-v2"
+    ### - "windows-native-credential-sync"
+    ### - "pm-34171-card-scanner"
+    ### - "pm-30529-webauthn-related-origins"
+    ### - "pm-32009-new-item-types"
     featureFlags: []
 
 ## @section ConfigMap parameters
